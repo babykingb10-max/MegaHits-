@@ -1,7 +1,7 @@
 {
   "name": "MegaHits Vibez API Gateway",
   "description": "Node/Express API proxy that powers the MegaHits Vibez super app.",
-  "repository": "https://github.com/ahmedwanguvu/MegaHits-",
+  "repository": "https://github.com/YOUR_USERNAME/YOUR_REPO",
   "keywords": ["node", "express", "api-gateway", "megahits-vibez"],
   "env": {
     "NODE_ENV": { "value": "production" },
@@ -9,7 +9,6 @@
     "TMDB_API_KEY": { "required": false },
     "TMDB_READ_ACCESS_TOKEN": { "required": false },
     "OMDB_API_KEY": { "required": false },
-    "APP_BASE": { "required": true },
     "SPOTIFY_CLIENT_ID": { "required": false },
     "SPOTIFY_CLIENT_SECRET": { "required": false },
     "DEEZER_APP_ID": { "required": false },
@@ -31,6 +30,7 @@
     "SOCIAL_YOUTUBE_URL": { "required": false },
     "SOCIAL_INSTAGRAM_URL": { "required": false },
     "SOCIAL_TIKTOK_URL": { "required": false },
+    "SOCIAL_FACEBOOK_URL": { "required": false },
     "GOOGLE_CLIENT_ID": { "required": false },
     "GOOGLE_CLIENT_SECRET": { "required": false },
     "SESSION_SECRET": { "generator": "secret" }
