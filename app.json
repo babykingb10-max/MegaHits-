@@ -1,7 +1,7 @@
 {
   "name": "MegaHits Vibez API Gateway",
   "description": "Node/Express API proxy that powers the MegaHits Vibez super app.",
-  "repository": "https://github.com/YOUR_USERNAME/YOUR_REPO",
+  "repository": "https://github.com/babykingb10-max/MegaHits-",
   "keywords": ["node", "express", "api-gateway", "megahits-vibez"],
   "env": {
     "NODE_ENV": { "value": "production" },
