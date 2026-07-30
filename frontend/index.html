@@ -104,6 +104,10 @@
     <span class="brand-mega">MEGA</span><span class="brand-hits">Hits</span> Vibez
   </div>
 
+  <a href="#/" class="sidebar-link" id="nav-home">
+    <svg class="icon" data-lucide="home"></svg> <span>Home</span>
+  </a>
+
   <div class="sidebar-section-label">Content categories</div>
   <ul id="sidebar-categories"></ul>
 
@@ -197,8 +201,7 @@
     <div class="modal-body">
       <div class="social-grid" id="social-grid"></div>
       <div class="field" style="margin-top:18px;">
-        <label class="field-label" for="feedback-text">Send feedback</label>
-        <select class="select-input" id="feedback-text" style="display:none;"></select>
+        <label class="field-label" for="feedback-input">Send feedback</label>
         <textarea id="feedback-input" class="select-input" style="height:88px; padding:10px 12px; resize:vertical;" placeholder="Tell us what you think…"></textarea>
       </div>
     </div>
@@ -225,6 +228,10 @@
   <div class="footer-copy">MegaHits Vibez Super App © 2026 — built for people who don't like waiting.</div>
   <div class="pwa-status" id="pwa-status"><svg class="icon icon-sm" data-lucide="wifi"></svg> Offline sync ready</div>
 </footer>
+
+<button class="scroll-top-btn" id="scroll-top-btn" aria-label="Back to top">
+  <svg class="icon" data-lucide="arrow-up"></svg>
+</button>
 
 <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 <script src="js/app.js"></script>
