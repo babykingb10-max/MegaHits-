@@ -1,37 +1,19 @@
 const express = require('express');
 const axios = require('axios');
-const { cache, cacheMiddleware } = require('../middleware/cache');
+const { cacheMiddleware } = require('../middleware/cache');
 
 const router = express.Router();
 
-async function getSpotifyToken() {
-  const cached = cache.get('spotify_token');
-  if (cached) return cached;
-
-  const creds = Buffer.from(
-    `${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`
-  ).toString('base64');
-
-  const { data } = await axios.post(
-    'https://accounts.spotify.com/api/token',
-    'grant_type=client_credentials',
-    { headers: { Authorization: `Basic ${creds}`, 'Content-Type': 'application/x-www-form-urlencoded' } }
-  );
-
-  // Tokens last 3600s; refresh slightly early
-  cache.set('spotify_token', data.access_token, data.expires_in - 60);
-  return data.access_token;
-}
-
 // GET /api/music/top50
+// Uses Deezer's public chart endpoint — no API key required, and unlike
+// Spotify's official playlists, Deezer's chart data isn't restricted for
+// third-party apps.
 router.get('/top50', cacheMiddleware(3600), async (req, res, next) => {
   try {
-    const token = await getSpotifyToken();
-    const { data } = await axios.get(
-      'https://api.spotify.com/v1/playlists/37i9dQZEVXbMDoHDwVN2tF/tracks',
-      { headers: { Authorization: `Bearer ${token}` }, params: { limit: 50 } }
-    );
-    res.json(data.items);
+    const { data } = await axios.get('https://api.deezer.com/chart/0/tracks', {
+      params: { limit: 50 },
+    });
+    res.json(data.data);
   } catch (err) {
     next(err);
   }
@@ -42,12 +24,10 @@ router.get('/', cacheMiddleware(1800), async (req, res, next) => {
   try {
     const { q } = req.query;
     if (!q) return res.status(400).json({ error: true, message: 'Missing query param "q"' });
-    const token = await getSpotifyToken();
-    const { data } = await axios.get('https://api.spotify.com/v1/search', {
-      headers: { Authorization: `Bearer ${token}` },
-      params: { q, type: 'track', limit: 20 },
+    const { data } = await axios.get('https://api.deezer.com/search', {
+      params: { q, limit: 20 },
     });
-    res.json(data.tracks.items);
+    res.json(data.data);
   } catch (err) {
     next(err);
   }
