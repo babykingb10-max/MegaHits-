@@ -185,9 +185,42 @@ function toggleSidebar(open) {
 }
 
 /* ---------- 6. HERO SLIDER ---------- */
-function buildHero() {
+async function buildHero() {
   const el = document.getElementById('hero-slider');
-  el.innerHTML = SAMPLE.hero.map((h, i) => `
+  let slides = [];
+
+  const movies = await fetchJSON('/movies/trending', null);
+  if (Array.isArray(movies) && movies.length) {
+    movies.slice(0, 4).forEach((m) => {
+      const bgImage = m.backdrop_path
+        ? `url('https://image.tmdb.org/t/p/w1280${m.backdrop_path}') center/cover no-repeat, `
+        : '';
+      slides.push({
+        title: m.title || m.name,
+        badge: 'TRENDING NOW',
+        desc: m.overview || '',
+        bg: `${bgImage}linear-gradient(135deg, #1a1a20, #0d0d10)`,
+        cta: 'Details',
+      });
+    });
+  }
+
+  const live = await fetchJSON('/sports/live', null);
+  if (Array.isArray(live) && live.length) {
+    const match = live[0];
+    slides.unshift({
+      title: `${match.teams?.home?.name || 'Home'} ${match.goals?.home ?? 0} – ${match.goals?.away ?? 0} ${match.teams?.away?.name || 'Away'}`,
+      badge: 'LIVE MATCH',
+      live: true,
+      desc: `${match.league?.name || 'Live match'} — minute ${match.fixture?.status?.elapsed ?? '—'}'`,
+      bg: 'linear-gradient(135deg, #1a1a20, #0d0d10)',
+      cta: 'Live stats',
+    });
+  }
+
+  if (!slides.length) slides = SAMPLE.hero; // offline / no data yet fallback
+
+  el.innerHTML = slides.map((h, i) => `
     <div class="hero-slide ${i === 0 ? 'active' : ''}" style="background:${h.bg}" data-index="${i}">
       <div class="hero-content">
         <span class="hero-badge ${h.live ? 'live' : ''}">${h.live ? '<span class="dot"></span>' : ''}${h.badge}</span>
@@ -203,15 +236,15 @@ function buildHero() {
         </div>
       </div>
     </div>
-  `).join('') + `<div class="hero-dots">${SAMPLE.hero.map((_, i) => `<span class="hero-dot ${i === 0 ? 'active' : ''}" data-dot="${i}"></span>`).join('')}</div>`;
+  `).join('') + `<div class="hero-dots">${slides.map((_, i) => `<span class="hero-dot ${i === 0 ? 'active' : ''}" data-dot="${i}"></span>`).join('')}</div>`;
 
   refreshIcons();
 
   el.querySelectorAll('[data-hero-info]').forEach((btn) =>
-    btn.addEventListener('click', () => showMediaDetail(SAMPLE.hero[+btn.dataset.heroInfo].title))
+    btn.addEventListener('click', () => showMediaDetail(slides[+btn.dataset.heroInfo].title))
   );
   el.querySelectorAll('[data-hero-cta]').forEach((btn) =>
-    btn.addEventListener('click', () => showToast(`Opening "${SAMPLE.hero[+btn.dataset.heroCta].title}"…`, 'info'))
+    btn.addEventListener('click', () => showMediaDetail(slides[+btn.dataset.heroCta].title))
   );
   el.querySelectorAll('[data-dot]').forEach((dot) =>
     dot.addEventListener('click', () => goToSlide(+dot.dataset.dot))
@@ -453,46 +486,67 @@ function initAudioPlayer() {
 }
 
 /* ---------- 10. SEARCH (debounced, cross-category) ---------- */
-function initSearch() {
-  const input = document.getElementById('search-input');
-  const results = document.getElementById('search-results');
-  let debounceTimer = null;
+function buildSearchResultsHTML(q) {
+  const matches = [];
+  CATEGORIES.forEach((cat) => {
+    const items = SAMPLE[cat.id];
+    if (!Array.isArray(items)) return;
+    items.forEach((item) => {
+      const title = item.title || `${item.home} vs ${item.away}` || '';
+      if (title.toLowerCase().includes(q)) matches.push({ cat, item, title });
+    });
+  });
+  return matches.length
+    ? matches.slice(0, 8).map((m) => `
+        <div class="search-result-item">
+          <svg class="icon icon-sm" data-lucide="${m.cat.icon}"></svg>
+          <div>
+            <div>${m.title}</div>
+            <div class="search-result-category">${m.cat.name}</div>
+          </div>
+        </div>
+      `).join('')
+    : `<div class="search-result-item">No results for "${q}"</div>`;
+}
 
+function attachSearchField(input, results, { overlayToggle } = {}) {
+  let debounceTimer = null;
   input.addEventListener('input', () => {
     clearTimeout(debounceTimer);
     const q = input.value.trim().toLowerCase();
-    if (!q) { results.classList.remove('active'); return; }
-    debounceTimer = setTimeout(() => runSearch(q), 300);
+    if (!q) {
+      results.innerHTML = '';
+      if (overlayToggle) results.classList.remove('active');
+      return;
+    }
+    debounceTimer = setTimeout(() => {
+      results.innerHTML = buildSearchResultsHTML(q);
+      if (overlayToggle) results.classList.add('active');
+      refreshIcons();
+    }, 300);
   });
+}
 
+function initSearch() {
+  // Desktop inline search bar
+  const desktopInput = document.getElementById('search-input');
+  const desktopResults = document.getElementById('search-results');
+  attachSearchField(desktopInput, desktopResults, { overlayToggle: true });
   document.addEventListener('click', (e) => {
-    if (!results.contains(e.target) && e.target !== input) results.classList.remove('active');
+    if (!desktopResults.contains(e.target) && e.target !== desktopInput) desktopResults.classList.remove('active');
   });
 
-  function runSearch(q) {
-    const matches = [];
-    CATEGORIES.forEach((cat) => {
-      const items = SAMPLE[cat.id];
-      if (!Array.isArray(items)) return;
-      items.forEach((item) => {
-        const title = item.title || `${item.home} vs ${item.away}` || '';
-        if (title.toLowerCase().includes(q)) matches.push({ cat, item, title });
-      });
-    });
-    results.innerHTML = matches.length
-      ? matches.slice(0, 8).map((m) => `
-          <div class="search-result-item">
-            <svg class="icon icon-sm" data-lucide="${m.cat.icon}"></svg>
-            <div>
-              <div>${m.title}</div>
-              <div class="search-result-category">${m.cat.name}</div>
-            </div>
-          </div>
-        `).join('')
-      : `<div class="search-result-item">No results for "${q}"</div>`;
-    results.classList.add('active');
-    refreshIcons();
-  }
+  // Mobile full-screen search modal
+  const mobileInput = document.getElementById('search-input-mobile');
+  const mobileResults = document.getElementById('search-results-mobile');
+  attachSearchField(mobileInput, mobileResults, { overlayToggle: false });
+
+  document.getElementById('search-toggle-btn').addEventListener('click', () => {
+    openModal('search-modal');
+    mobileInput.value = '';
+    mobileResults.innerHTML = '';
+    setTimeout(() => mobileInput.focus(), 150);
+  });
 }
 
 /* ---------- 11. SETTINGS MODAL ---------- */
