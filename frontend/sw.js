@@ -1,4 +1,4 @@
-const CACHE_NAME = 'megahits-vibez-v1';
+const CACHE_NAME = 'megahits-vibez-v2';
 const STATIC_ASSETS = [
   '/',
   '/index.html',
@@ -21,16 +21,20 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Network-first for API calls, cache-first for static assets
+// Network-first for everything except third-party CDN assets. This means a
+// fresh deploy is always visible on next load; the cache only kicks in as an
+// offline fallback, never masking a real update.
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-  if (request.url.includes('/api/')) {
-    event.respondWith(
-      fetch(request).catch(() => caches.match(request))
-    );
-    return;
-  }
+  if (request.method !== 'GET') return;
+
   event.respondWith(
-    caches.match(request).then((cached) => cached || fetch(request))
+    fetch(request)
+      .then((response) => {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+        return response;
+      })
+      .catch(() => caches.match(request))
   );
 });
