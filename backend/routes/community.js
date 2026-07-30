@@ -9,6 +9,7 @@ router.get('/links', (req, res) => {
     youtube: process.env.SOCIAL_YOUTUBE_URL || null,
     instagram: process.env.SOCIAL_INSTAGRAM_URL || null,
     tiktok: process.env.SOCIAL_TIKTOK_URL || null,
+    facebook: process.env.SOCIAL_FACEBOOK_URL || null,
   });
 });
 
