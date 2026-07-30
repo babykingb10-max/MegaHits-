@@ -203,6 +203,33 @@ input, select { font-family: inherit; }
   letter-spacing: 0.05em;
 }
 
+/* Mobile search toggle — hidden by default; CSS below swaps it in under 640px */
+.search-toggle-btn { display: none; }
+
+.search-modal-overlay { align-items: flex-start; }
+.search-modal-panel {
+  width: 100%;
+  max-width: 640px;
+  margin-top: 12px;
+  max-height: 90vh;
+}
+.search-wrap-mobile { flex: 1; max-width: none; margin: 0; }
+#search-results-mobile { padding: 0; }
+#search-results-mobile .search-result-item { padding: 14px 20px; }
+#search-results-mobile:empty::after {
+  content: 'Start typing to search across every category…';
+  display: block;
+  padding: 24px 20px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 640px) {
+  #search-wrap-desktop { display: none; }
+  .search-toggle-btn { display: grid; }
+  .brand span.brand-text { display: none; }
+}
+
 .header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
 .signin-btn {
@@ -800,11 +827,8 @@ input, select { font-family: inherit; }
 /* ============================================================
    RESPONSIVE
    ============================================================ */
-@media (max-width: 640px) {
-  .search-wrap { position: static; }
-  .search-results { left: 12px; right: 12px; }
-  .brand span.brand-text { display: none; }
-}
+/* Search bar responsiveness is handled by #search-wrap-desktop /
+   .search-toggle-btn rules above. */
 
 /* PWA install banner */
 .install-banner {
