@@ -63,6 +63,7 @@ app.use('/api/ai', require('./routes/ai'));
 app.use('/api/books', require('./routes/books'));
 app.use('/api/travel', require('./routes/travel'));
 app.use('/api/community', require('./routes/community'));
+app.use('/api/config', require('./routes/config'));
 
 // ── 404 + error handling ─────────────────────────────────
 app.use((req, res) => res.status(404).json({ error: true, message: 'Route not found' }));
