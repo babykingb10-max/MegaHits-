@@ -5,13 +5,14 @@ const { cacheMiddleware } = require('../middleware/cache');
 const router = express.Router();
 
 // GET /api/news?category=technology
+// Uses Currents API — unlike NewsAPI's free tier, it works on live/production domains.
 router.get('/', cacheMiddleware(1800), async (req, res, next) => {
   try {
-    const { category = 'general', country = 'us' } = req.query;
-    const { data } = await axios.get('https://newsapi.org/v2/top-headlines', {
-      params: { category, country, pageSize: 20, apiKey: process.env.NEWS_API_KEY },
+    const { category = 'general', language = 'en' } = req.query;
+    const { data } = await axios.get('https://api.currentsapi.services/v1/latest-news', {
+      params: { category, language, apiKey: process.env.CURRENTS_API_KEY },
     });
-    res.json(data.articles);
+    res.json(data.news);
   } catch (err) {
     next(err);
   }
