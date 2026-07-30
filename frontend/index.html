@@ -36,11 +36,15 @@
     </a>
   </div>
 
-  <div class="search-wrap">
+  <div class="search-wrap" id="search-wrap-desktop">
     <svg class="icon icon-sm search-icon" data-lucide="search"></svg>
     <input type="text" class="search-input" id="search-input" placeholder="Search movies, music, sports, books…" autocomplete="off" />
     <div class="search-results" id="search-results"></div>
   </div>
+
+  <button class="icon-btn search-toggle-btn" id="search-toggle-btn" aria-label="Open search">
+    <svg class="icon" data-lucide="search"></svg>
+  </button>
 
   <div class="header-right">
     <button class="signin-btn" id="signin-btn">
@@ -119,6 +123,20 @@
 
   <div class="sidebar-footer">MegaHits Vibez © 2026</div>
 </nav>
+
+<!-- ============ MOBILE SEARCH MODAL ============ -->
+<div class="modal-overlay search-modal-overlay" id="search-modal">
+  <div class="modal-panel search-modal-panel">
+    <div class="modal-header">
+      <div class="search-wrap search-wrap-mobile">
+        <svg class="icon icon-sm search-icon" data-lucide="search"></svg>
+        <input type="text" class="search-input" id="search-input-mobile" placeholder="Search movies, music, sports, books…" autocomplete="off" />
+      </div>
+      <button class="icon-btn" data-close-modal="search-modal" aria-label="Close search"><svg class="icon" data-lucide="x"></svg></button>
+    </div>
+    <div class="modal-body" id="search-results-mobile"></div>
+  </div>
+</div>
 
 <!-- ============ 6a. SETTINGS MODAL ============ -->
 <div class="modal-overlay" id="settings-modal">
