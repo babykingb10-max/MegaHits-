@@ -697,6 +697,14 @@ function initPWA() {
         // Registration can fail on file:// or unsupported hosts — non-fatal.
       });
     });
+    // When a new deploy activates a new service worker, reload once so the
+    // person sees the update immediately instead of the previous version.
+    let hasReloaded = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (hasReloaded) return;
+      hasReloaded = true;
+      window.location.reload();
+    });
   }
 }
 
