@@ -37,6 +37,18 @@ app.use(
 // ── Health check (used by Render/Heroku/Pterodactyl uptime probes) ─
 app.get('/health', (req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
 
+// ── Friendly root route — this is an API-only backend, not a website.
+// Visiting "/" in a browser is expected; this avoids a confusing 404. ─
+app.get('/', (req, res) => {
+  res.json({
+    name: 'MegaHits Vibez API Gateway',
+    status: 'running',
+    health: '/health',
+    api_base: '/api',
+    docs: 'See backend/README or DEPLOY_HEROKU.md in the project repo.',
+  });
+});
+
 // ── Route mounting — one router per category, per SEHEMU YA 2 ──
 app.use('/api/movies', require('./routes/movies'));
 app.use('/api/anime', require('./routes/anime'));
