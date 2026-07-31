@@ -1077,9 +1077,33 @@ let googleReady = false;
 function loadScript(src) { return new Promise((resolve, reject) => { const s = document.createElement('script'); s.src = src; s.onload = resolve; s.onerror = reject; document.head.appendChild(s); }); }
 function decodeJwt(token) { try { const payload = token.split('.')[1]; return JSON.parse(decodeURIComponent(escape(atob(payload.replace(/-/g, '+').replace(/_/g, '/'))))); } catch { return null; } }
 function renderSignedInState() {
-  const btn = document.getElementById('signin-btn');
-  if (state.user) btn.innerHTML = `<img class="avatar" src="${state.user.picture}" alt="${state.user.name}" />`;
-  else { btn.innerHTML = `<svg class="icon icon-sm" data-lucide="log-in"></svg><span>Sign in</span>`; refreshIcons(); }
+  const guestBtn = document.getElementById('signin-btn');
+  const guestSettingsBtn = document.getElementById('settings-toggle');
+  const userMenu = document.getElementById('user-menu');
+  const img = document.getElementById('user-avatar-img');
+  const fallback = document.getElementById('user-avatar-fallback');
+
+  if (state.user) {
+    guestBtn.style.display = 'none';
+    guestSettingsBtn.style.display = 'none';
+    userMenu.style.display = '';
+    document.getElementById('user-dropdown-name').textContent = state.user.name || state.user.email || 'Account';
+    fallback.textContent = (state.user.name || state.user.email || '?').trim().charAt(0).toUpperCase();
+    // Google profile photos 404 without this attribute in some browsers, and can
+    // fail to load for other reasons — fall back to initials instead of a broken icon.
+    img.style.display = 'none';
+    fallback.style.display = 'flex';
+    if (state.user.picture) {
+      img.onload = () => { img.style.display = ''; fallback.style.display = 'none'; };
+      img.onerror = () => { img.style.display = 'none'; fallback.style.display = 'flex'; };
+      img.src = state.user.picture;
+    }
+  } else {
+    guestBtn.style.display = '';
+    guestSettingsBtn.style.display = '';
+    userMenu.style.display = 'none';
+    document.getElementById('user-dropdown').classList.remove('active');
+  }
 }
 function handleGoogleCredential(response) {
   const payload = decodeJwt(response.credential);
@@ -1099,20 +1123,40 @@ async function initGoogleSignIn() {
     googleReady = true;
   } catch (e) { /* offline/blocked — sign-in stays inactive */ }
 }
+function signOut() {
+  state.user = null;
+  localStorage.removeItem('mhv-user');
+  renderSignedInState();
+  showToast('Signed out', 'info');
+  if (googleReady) window.google.accounts.id.disableAutoSelect();
+}
 function initSignIn() {
   const stored = localStorage.getItem('mhv-user');
   if (stored) { try { state.user = JSON.parse(stored); } catch { /* ignore */ } }
   renderSignedInState();
   initGoogleSignIn();
+
   document.getElementById('signin-btn').addEventListener('click', () => {
-    if (state.user) {
-      state.user = null; localStorage.removeItem('mhv-user'); renderSignedInState();
-      showToast('Signed out', 'info');
-      if (googleReady) window.google.accounts.id.disableAutoSelect();
-      return;
-    }
     if (googleReady) window.google.accounts.id.prompt();
     else showToast("Sign-in isn't configured on this deployment yet.", 'error');
+  });
+
+  const dropdown = document.getElementById('user-dropdown');
+  document.getElementById('user-avatar-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isActive = dropdown.classList.toggle('active');
+    document.getElementById('user-avatar-btn').setAttribute('aria-expanded', String(isActive));
+  });
+  document.addEventListener('click', (e) => {
+    if (!dropdown.contains(e.target) && e.target.id !== 'user-avatar-btn') dropdown.classList.remove('active');
+  });
+  document.getElementById('dropdown-settings-btn').addEventListener('click', () => {
+    dropdown.classList.remove('active');
+    openModal('settings-modal');
+  });
+  document.getElementById('dropdown-logout-btn').addEventListener('click', () => {
+    dropdown.classList.remove('active');
+    signOut();
   });
 }
 
