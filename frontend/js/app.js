@@ -15,6 +15,13 @@ function refreshIcons() {
     try { lucide.createIcons(); } catch (e) { /* non-fatal */ }
   }
 }
+function loadingHTML(message = 'Loading…') {
+  return `<div class="loading-inline"><span class="spinner-sm"></span> ${message}</div>`;
+}
+function hidePreloader() {
+  const el = document.getElementById('preloader');
+  if (el) el.classList.add('hidden');
+}
 
 /* ---------- 1. CATEGORY REGISTRY ---------- */
 const CATEGORIES = [
@@ -461,7 +468,7 @@ async function buildHomePreview() {
         </h3>
         <a href="#/${c.id}" class="view-all-link">View all <svg class="icon icon-sm" data-lucide="chevron-right"></svg></a>
       </div>
-      <div class="preview-row" id="preview-${c.id}"><div class="card-sub">Loading…</div></div>
+      <div class="preview-row" id="preview-${c.id}">${loadingHTML()}</div>
     </div>
   `).join('');
   refreshIcons();
@@ -517,7 +524,7 @@ async function renderCategoryPage(cat) {
   document.getElementById('category-page-icon').setAttribute('data-lucide', cat.icon);
   document.getElementById('category-page-toolbar').innerHTML = '';
   document.getElementById('category-page-extra').innerHTML = '';
-  document.getElementById('category-page-grid').innerHTML = '<div class="card-sub">Loading…</div>';
+  document.getElementById('category-page-grid').innerHTML = loadingHTML();
   refreshIcons();
 
   if (cat.id === 'weather') return renderWeatherPage();
@@ -558,7 +565,7 @@ async function renderGenericSearchPage(cat) {
 
 async function runCategorySearch(cat, q) {
   const grid = document.getElementById('category-page-grid');
-  grid.innerHTML = '<div class="card-sub">Searching…</div>';
+  grid.innerHTML = loadingHTML('Searching…');
   const searchPaths = {
     anime: `/anime?q=${encodeURIComponent(q)}`,
     music: `/music?q=${encodeURIComponent(q)}`,
@@ -611,7 +618,7 @@ async function renderMoviesPage() {
         chip.classList.add('active');
         const genreId = chip.dataset.genre;
         const grid = document.getElementById('category-page-grid');
-        grid.innerHTML = '<div class="card-sub">Loading…</div>';
+        grid.innerHTML = loadingHTML();
         const path = genreId ? `/movies/discover?genre=${genreId}` : '/movies/trending';
         const { ok, data } = await fetchAPI(path);
         const items = ok && Array.isArray(data) ? data.map(NORMALIZERS.movies) : (state.categoryItems.movies || []);
@@ -655,7 +662,7 @@ async function renderRecipesPage() {
     debounceTimer = setTimeout(async () => {
       if (!q) return;
       const grid = document.getElementById('category-page-grid');
-      grid.innerHTML = '<div class="card-sub">Searching…</div>';
+      grid.innerHTML = loadingHTML('Searching…');
       const { ok, data } = await fetchAPI(`/recipes?ingredients=${encodeURIComponent(q)}`);
       const items = ok && Array.isArray(data) ? data.map(NORMALIZERS.recipes) : [];
       state.categoryItems.recipes = items;
@@ -696,7 +703,7 @@ async function renderNewsPage() {
       extra.querySelectorAll('.filter-chip').forEach((c) => c.classList.remove('active'));
       chip.classList.add('active');
       const grid = document.getElementById('category-page-grid');
-      grid.innerHTML = '<div class="card-sub">Loading…</div>';
+      grid.innerHTML = loadingHTML();
       const { ok, data } = await fetchAPI(`/news?category=${chip.dataset.newsCat}`);
       const items = ok && Array.isArray(data) ? data.map(NORMALIZERS.news) : [];
       state.categoryItems.news = items;
@@ -746,7 +753,7 @@ async function renderWeatherPage() {
 async function loadWeatherFor(coords) {
   const grid = document.getElementById('category-page-grid');
   const extra = document.getElementById('category-page-extra');
-  grid.innerHTML = '<div class="card-sub">Loading…</div>';
+  grid.innerHTML = loadingHTML();
   const { ok, data } = await fetchAPI(`/weather?lat=${coords.lat}&lon=${coords.lon}`);
   const w = ok ? normalizeWeather(data) : null;
   if (!w) { grid.innerHTML = emptyStateHTML('Weather is unavailable right now — check your OPENWEATHER_API_KEY.'); return; }
@@ -777,7 +784,7 @@ async function renderSportsPage() {
   const extra = document.getElementById('category-page-extra');
   extra.innerHTML = `
     <h4 style="font-size:0.9rem; margin-bottom:10px;">Live right now</h4>
-    <div class="grid" id="live-matches-grid" style="margin-bottom:24px;"><div class="card-sub">Loading…</div></div>
+    <div class="grid" id="live-matches-grid" style="margin-bottom:24px;">${loadingHTML()}</div>
     <h4 style="font-size:0.9rem; margin-bottom:10px;">League standings</h4>
     <div class="league-select-row">
       <select class="select-input" id="league-select" style="max-width:220px;">${LEAGUES.map((l) => `<option value="${l.id}">${l.name}</option>`).join('')}</select>
@@ -803,7 +810,7 @@ async function renderSportsPage() {
 
   async function loadStandings(leagueId) {
     const container = document.getElementById('standings-container');
-    container.innerHTML = '<div class="card-sub">Loading standings…</div>';
+    container.innerHTML = loadingHTML('Loading standings…');
     const season = new Date().getFullYear();
     const { ok, data } = await fetchAPI(`/sports/standings?league=${leagueId}&season=${season}`);
     const table = ok && data?.[0]?.league?.standings?.[0];
@@ -1222,6 +1229,9 @@ function init() {
   router();
 
   refreshIcons();
+  setTimeout(hidePreloader, 900);
 }
 
 document.addEventListener('DOMContentLoaded', init);
+window.addEventListener('load', () => setTimeout(hidePreloader, 4000)); // failsafe in case init() errors early
+
