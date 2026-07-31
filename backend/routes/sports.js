@@ -44,4 +44,18 @@ router.get('/fixture/:id/stats', cacheMiddleware(60), async (req, res, next) => 
   }
 });
 
+// GET /api/sports/players?search=Messi
+router.get('/players', cacheMiddleware(86400), async (req, res, next) => {
+  try {
+    const { search, league, season = new Date().getFullYear() } = req.query;
+    if (!search) return res.status(400).json({ error: true, message: 'Missing "search" query param' });
+    const { data } = await apiFootballClient().get('/players', {
+      params: { search, league, season },
+    });
+    res.json(data.response);
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;
