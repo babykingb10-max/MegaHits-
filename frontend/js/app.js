@@ -1,10 +1,10 @@
 /* ============================================================
    MEGAHITS VIBEZ — APP.JS
    Vanilla ES6+, zero external UI frameworks. Talks to the Express
-   proxy in /backend. Falls back to bundled sample data ONLY when a
-   request truly fails (offline / API not configured yet) — a
-   successful-but-empty response shows an honest "no results" state
-   instead of fake data.
+   proxy in /backend. Hash-based router: "#/" = home (lite previews),
+   "#/{category}" = full category page. Falls back to bundled sample
+   data ONLY when a request truly fails — a successful-but-empty
+   response shows an honest "no results" state instead of fake data.
    ============================================================ */
 
 const API_BASE = window.MEGAHITS_API_BASE || '/api';
@@ -30,34 +30,26 @@ const CATEGORIES = [
   { id: 'books',   name: 'Books & Comics',   icon: 'book-open',   badge: null },
   { id: 'travel',  name: 'Travel & Events',  icon: 'map-pin',     badge: null },
 ];
+const LEAGUES = [
+  { id: 39, name: 'Premier League' },
+  { id: 140, name: 'La Liga' },
+  { id: 135, name: 'Serie A' },
+  { id: 78, name: 'Bundesliga' },
+  { id: 61, name: 'Ligue 1' },
+  { id: 2, name: 'Champions League' },
+];
+const NEWS_CATEGORIES = ['general', 'technology', 'business', 'sports', 'entertainment', 'science'];
 
 /* ---------- 2. OFFLINE FALLBACK DATA (only used if a request fails) ---------- */
 const SAMPLE = {
-  movies: [
-    { title: 'Avatar 3: Fire & Ash', sub: '2026', rating: '8.6', image: null, description: 'The next chapter of Pandora arrives.' },
-    { title: 'Dune: Part Three', sub: '2026', rating: '8.4', image: null, description: 'Paul Atreides unites the Fremen.' },
-  ],
-  anime: [
-    { title: 'One Piece', sub: '1000+ episodes · PG', rating: '8.7', image: null, description: 'Luffy and crew sail the Grand Line.' },
-  ],
-  music: [
-    { title: 'Sitting On Top Of The World', sub: 'Burna Boy', image: null, preview: null, description: 'Afrobeats hit.' },
-  ],
-  gaming: [
-    { title: 'Elden Ring: Shadow Realms', sub: 'PS5 / PC · Metacritic 94', image: null, description: 'Open-world action RPG.' },
-  ],
-  recipes: [
-    { title: 'Chicken Pilau', sub: 'A comforting East African classic', image: null, description: 'Spiced rice with chicken.' },
-  ],
-  news: [
-    { title: 'MegaHits Vibez is now live', sub: 'MegaHits Vibez', image: null, description: 'Thanks for trying the app.' },
-  ],
-  books: [
-    { title: 'Things Fall Apart', sub: 'Chinua Achebe', image: null, description: 'A classic of African literature.' },
-  ],
-  travel: [
-    { title: 'No events loaded', sub: '', image: null, description: 'Could not reach the events service.' },
-  ],
+  movies: [{ title: 'Avatar 3: Fire & Ash', sub: '2026', rating: '8.6', image: null, description: 'The next chapter of Pandora arrives.' }],
+  anime: [{ title: 'One Piece', sub: '1000+ episodes · PG', rating: '8.7', image: null, description: 'Luffy and crew sail the Grand Line.' }],
+  music: [{ title: 'Sitting On Top Of The World', sub: 'Burna Boy', image: null, preview: null, description: 'Afrobeats hit.' }],
+  gaming: [{ title: 'Elden Ring: Shadow Realms', sub: 'PS5 / PC · Metacritic 94', image: null, description: 'Open-world action RPG.' }],
+  recipes: [{ title: 'Chicken Pilau', sub: 'A comforting East African classic', image: null, description: 'Spiced rice with chicken.' }],
+  news: [{ title: 'MegaHits Vibez is now live', sub: 'MegaHits Vibez', image: null, description: 'Thanks for trying the app.' }],
+  books: [{ title: 'Things Fall Apart', sub: 'Chinua Achebe', image: null, description: 'A classic of African literature.' }],
+  travel: [{ title: 'No events loaded', sub: '', image: null, description: 'Could not reach the events service.' }],
 };
 
 /* ---------- 3. STATE ---------- */
@@ -70,12 +62,12 @@ const state = {
   heroTimer: null,
   audio: { playing: false },
   user: null,
-  categoryItems: {}, // populated per-category with the *real* rendered items, for click handlers
+  categoryItems: {}, // full normalized arrays per category, used by both home preview and category pages
+  currentCoords: null,
 };
 state.audioEl = new Audio();
 
 /* ---------- 4. FETCH HELPERS ---------- */
-// Simple GET used for singular endpoints (hero, community links, config).
 async function fetchJSON(path, fallback) {
   try {
     const res = await fetch(`${API_BASE}${path}`);
@@ -85,10 +77,6 @@ async function fetchJSON(path, fallback) {
     return fallback;
   }
 }
-
-// Category-grid fetch: distinguishes "request failed" from "request
-// succeeded but returned zero results" so we never show fake data for a
-// working-but-empty API.
 async function fetchAPI(path) {
   try {
     const res = await fetch(`${API_BASE}${path}`);
@@ -99,8 +87,8 @@ async function fetchAPI(path) {
     return { ok: false, data: null };
   }
 }
-
 function getUserCoords() {
+  if (state.currentCoords) return Promise.resolve(state.currentCoords);
   return new Promise((resolve) => {
     if (!navigator.geolocation) return resolve(DEFAULT_COORDS);
     const timer = setTimeout(() => resolve(DEFAULT_COORDS), 4000);
@@ -111,7 +99,6 @@ function getUserCoords() {
     );
   });
 }
-
 async function buildEndpoint(catId) {
   switch (catId) {
     case 'movies': return '/movies/trending';
@@ -129,14 +116,16 @@ async function buildEndpoint(catId) {
   }
 }
 
-/* ---------- 5. NORMALIZERS — map each API's raw shape to a common display shape ---------- */
+/* ---------- 5. NORMALIZERS ---------- */
 const NORMALIZERS = {
   movies: (raw) => ({
+    id: raw.id,
     title: raw.title || raw.name || 'Untitled',
-    sub: `${(raw.release_date || '').slice(0, 4) || 'TBA'}${raw.vote_average ? ' · ' + raw.vote_average.toFixed(1) + ' \u2605' : ''}`,
+    sub: `${(raw.release_date || raw.first_air_date || '').slice(0, 4) || 'TBA'}${raw.vote_average ? ' · ' + raw.vote_average.toFixed(1) + ' \u2605' : ''}`,
     rating: raw.vote_average ? raw.vote_average.toFixed(1) : null,
     image: raw.poster_path ? `https://image.tmdb.org/t/p/w500${raw.poster_path}` : null,
     description: raw.overview || 'No description available.',
+    isMovie: true,
   }),
   anime: (raw) => ({
     title: raw.title || raw.title_english || 'Untitled',
@@ -160,10 +149,12 @@ const NORMALIZERS = {
     description: `Released ${raw.released || 'TBA'}.${(raw.genres || []).length ? ' Genres: ' + raw.genres.map((g) => g.name).join(', ') + '.' : ''}`,
   }),
   recipes: (raw) => ({
+    id: raw.id,
     title: raw.title || 'Untitled recipe',
     sub: `Uses ${raw.usedIngredientCount ?? 0} of your ingredients${raw.missedIngredientCount ? `, needs ${raw.missedIngredientCount} more` : ''}`,
     image: raw.image || null,
     description: `You have ${raw.usedIngredientCount ?? 0} of the ingredients for this recipe; missing ${raw.missedIngredientCount ?? 0}.`,
+    isRecipe: true,
   }),
   news: (raw) => ({
     title: raw.title || 'Untitled',
@@ -187,7 +178,6 @@ const NORMALIZERS = {
     url: raw.url,
   }),
 };
-
 function normalizeMatch(raw) {
   return {
     home: raw.teams?.home?.name || 'Home',
@@ -204,10 +194,13 @@ function normalizeWeather(raw) {
   if (!c) return null;
   return {
     temp: Math.round(c.main.temp),
+    feelsLike: Math.round(c.main.feels_like),
     city: c.name,
+    country: c.sys?.country || '',
     condition: c.weather?.[0]?.description || '',
     humidity: `${c.main.humidity}%`,
     wind: `${Math.round((c.wind?.speed || 0) * 3.6)} km/h`,
+    forecast: raw.forecast,
   };
 }
 function normalizeCoin(raw) {
@@ -216,8 +209,26 @@ function normalizeCoin(raw) {
     symbol: (raw.symbol || '').toUpperCase(),
     image: raw.image,
     price: raw.current_price != null ? raw.current_price.toLocaleString(undefined, { maximumFractionDigits: raw.current_price < 1 ? 4 : 2 }) : '—',
+    priceRaw: raw.current_price,
     change: raw.price_change_percentage_24h != null ? +raw.price_change_percentage_24h.toFixed(2) : 0,
   };
+}
+function dailyForecast(forecastRaw) {
+  if (!forecastRaw?.list) return [];
+  const byDay = {};
+  forecastRaw.list.forEach((entry) => {
+    const day = entry.dt_txt.slice(0, 10);
+    if (!byDay[day]) byDay[day] = [];
+    byDay[day].push(entry);
+  });
+  return Object.entries(byDay).slice(0, 5).map(([day, entries]) => {
+    const midday = entries.find((e) => e.dt_txt.includes('12:00')) || entries[Math.floor(entries.length / 2)];
+    return {
+      label: new Date(day).toLocaleDateString('en-US', { weekday: 'short' }),
+      temp: Math.round(midday.main.temp),
+      icon: midday.weather?.[0]?.main || '',
+    };
+  });
 }
 
 /* ---------- 6. UI HELPERS ---------- */
@@ -229,19 +240,10 @@ function showToast(message, type = 'info') {
   toast.innerHTML = `<svg class="icon icon-sm" data-lucide="${iconName}"></svg><span>${message}</span>`;
   container.appendChild(toast);
   refreshIcons();
-  setTimeout(() => {
-    toast.classList.add('leaving');
-    setTimeout(() => toast.remove(), 220);
-  }, 3000);
+  setTimeout(() => { toast.classList.add('leaving'); setTimeout(() => toast.remove(), 220); }, 3000);
 }
-function openModal(id) {
-  document.getElementById(id).classList.add('active');
-  document.body.style.overflow = 'hidden';
-}
-function closeModal(id) {
-  document.getElementById(id).classList.remove('active');
-  document.body.style.overflow = '';
-}
+function openModal(id) { document.getElementById(id).classList.add('active'); document.body.style.overflow = 'hidden'; }
+function closeModal(id) { document.getElementById(id).classList.remove('active'); document.body.style.overflow = ''; }
 
 /* ---------- 7. SIDEBAR + HAMBURGER MENU ---------- */
 function buildSidebar() {
@@ -255,23 +257,11 @@ function buildSidebar() {
       </a>
     </li>
   `).join('');
-
   list.querySelectorAll('.sidebar-link[data-category]').forEach((link) => {
-    link.addEventListener('click', (e) => {
-      e.preventDefault();
-      toggleSidebar(false);
-      const target = document.getElementById(`section-${link.dataset.category}`);
-      setTimeout(() => target?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 280);
-    });
+    link.addEventListener('click', () => toggleSidebar(false));
   });
-
-  document.getElementById('nav-home').addEventListener('click', (e) => {
-    e.preventDefault();
-    toggleSidebar(false);
-    setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 280);
-  });
+  document.getElementById('nav-home').addEventListener('click', () => toggleSidebar(false));
 }
-
 function toggleSidebar(open) {
   const sidebar = document.getElementById('sidebar');
   const overlay = document.getElementById('sidebar-overlay');
@@ -282,42 +272,77 @@ function toggleSidebar(open) {
   toggleBtn.setAttribute('aria-expanded', String(isOpen));
 }
 
-/* ---------- 8. HERO SLIDER — real trending movies + live match ---------- */
+/* ---------- 8. ROUTER ---------- */
+function router() {
+  const hash = location.hash.replace('#/', '').replace('#', '');
+  const cat = CATEGORIES.find((c) => c.id === hash);
+  document.querySelectorAll('.sidebar-link[data-category]').forEach((l) => l.classList.toggle('active', l.dataset.category === hash));
+  window.scrollTo({ top: 0, behavior: 'instant' in document.documentElement.style ? 'instant' : 'auto' });
+  if (cat) {
+    document.getElementById('view-home').style.display = 'none';
+    document.getElementById('view-category').style.display = '';
+    renderCategoryPage(cat);
+  } else {
+    document.getElementById('view-category').style.display = 'none';
+    document.getElementById('view-home').style.display = '';
+  }
+}
+
+/* ---------- 9. HERO SLIDER — rotating pool across categories ---------- */
 async function buildHero() {
   const el = document.getElementById('hero-slider');
-  let slides = [];
+  let pool = [];
+
+  const { ok: sportsOk, data: live } = await fetchAPI('/sports/live');
+  let liveSlide = null;
+  if (sportsOk && Array.isArray(live) && live.length) {
+    const match = normalizeMatch(live[0]);
+    liveSlide = {
+      title: `${match.home} ${match.homeScore} – ${match.awayScore} ${match.away}`,
+      badge: 'LIVE MATCH', live: true,
+      desc: `${match.league} — minute ${match.minute || '—'}`,
+      bg: 'linear-gradient(135deg, #1a1a20, #0d0d10)', cta: 'Live stats',
+      detail: { title: `${match.home} vs ${match.away}`, sub: match.league, description: match.events.map((e) => `⚽ ${e.time?.elapsed}' — ${e.player?.name || 'Unknown'} (${e.team?.name || ''})`).join('\n') || 'No events yet.' },
+      link: '#/sports',
+    };
+  }
 
   const { ok: moviesOk, data: movies } = await fetchAPI('/movies/trending');
   if (moviesOk && Array.isArray(movies) && movies.length) {
-    movies.slice(0, 4).forEach((m) => {
-      const bgImage = m.backdrop_path
-        ? `url('https://image.tmdb.org/t/p/w1280${m.backdrop_path}') center/cover no-repeat, `
-        : '';
-      slides.push({
-        title: m.title || m.name,
-        badge: 'TRENDING NOW',
-        desc: m.overview || '',
-        bg: `${bgImage}linear-gradient(135deg, #1a1a20, #0d0d10)`,
-        cta: 'Details',
-        detail: { title: m.title || m.name, sub: (m.release_date || '').slice(0, 4), image: m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : null, description: m.overview || '' },
-      });
+    movies.slice(0, 3).forEach((m) => pool.push({
+      title: m.title, badge: 'TRENDING MOVIE',
+      desc: m.overview || '',
+      bg: m.backdrop_path ? `url('https://image.tmdb.org/t/p/w1280${m.backdrop_path}') center/cover no-repeat, linear-gradient(135deg, #1a1a20, #0d0d10)` : 'linear-gradient(135deg, #1a1a20, #0d0d10)',
+      cta: 'Details',
+      detail: { title: m.title, sub: (m.release_date || '').slice(0, 4), image: m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : null, description: m.overview || '' },
+      link: '#/movies',
+    }));
+  }
+  const { ok: gamingOk, data: games } = await fetchAPI('/gaming/new-releases');
+  if (gamingOk && Array.isArray(games) && games.length) {
+    const g = games[0];
+    pool.push({
+      title: g.name, badge: 'NEW GAME RELEASE', desc: `Released ${g.released || 'recently'}.`,
+      bg: g.background_image ? `url('${g.background_image}') center/cover no-repeat, linear-gradient(135deg, #1a1a20, #0d0d10)` : 'linear-gradient(135deg, #1a1a20, #0d0d10)',
+      cta: 'Details',
+      detail: { title: g.name, image: g.background_image, description: `Released ${g.released || 'TBA'}.` },
+      link: '#/gaming',
+    });
+  }
+  const { ok: newsOk, data: news } = await fetchAPI('/news?category=general');
+  if (newsOk && Array.isArray(news) && news.length) {
+    const n = news[0];
+    pool.push({
+      title: n.title, badge: 'BREAKING NEWS', desc: n.description || '',
+      bg: n.image && n.image !== 'None' ? `url('${n.image}') center/cover no-repeat, linear-gradient(135deg, #1a1a20, #0d0d10)` : 'linear-gradient(135deg, #1a1a20, #0d0d10)',
+      cta: 'Read', detail: { title: n.title, description: n.description || '', url: n.url },
+      link: '#/news',
     });
   }
 
-  const { ok: sportsOk, data: live } = await fetchAPI('/sports/live');
-  if (sportsOk && Array.isArray(live) && live.length) {
-    const match = normalizeMatch(live[0]);
-    slides.unshift({
-      title: `${match.home} ${match.homeScore} – ${match.awayScore} ${match.away}`,
-      badge: 'LIVE MATCH',
-      live: true,
-      desc: `${match.league} — minute ${match.minute || '—'}`,
-      bg: 'linear-gradient(135deg, #1a1a20, #0d0d10)',
-      cta: 'Live stats',
-      detail: { title: `${match.home} vs ${match.away}`, sub: match.league, image: null, description: match.events.map((e) => `⚽ ${e.time?.elapsed}' — ${e.player?.name || 'Unknown'} (${e.team?.name || ''})`).join('\n') || 'No events yet.' },
-    });
-  }
-
+  // shuffle the non-live pool and take up to 3, live match always first if present
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[pool[i], pool[j]] = [pool[j], pool[i]]; }
+  let slides = [...(liveSlide ? [liveSlide] : []), ...pool.slice(0, 3)];
   if (!slides.length) slides = [{ title: 'Welcome to MegaHits Vibez', badge: 'GETTING STARTED', desc: 'Content will appear here once the backend is reachable.', bg: 'linear-gradient(135deg, #1a1a20, #0d0d10)', cta: 'Details', detail: { title: 'MegaHits Vibez', description: 'Content will appear here once the backend is reachable.' } }];
 
   el.innerHTML = slides.map((h, i) => `
@@ -327,19 +352,14 @@ async function buildHero() {
         <h1 class="hero-title">${h.title}</h1>
         <p class="hero-desc">${h.desc}</p>
         <div class="hero-actions">
-          <button class="btn btn-primary" data-hero-cta="${i}">
-            <svg class="icon icon-sm" data-lucide="play"></svg> ${h.cta}
-          </button>
-          <button class="btn btn-ghost" data-hero-info="${i}">
-            <svg class="icon icon-sm" data-lucide="info"></svg> Details
-          </button>
+          <button class="btn btn-primary" data-hero-cta="${i}"><svg class="icon icon-sm" data-lucide="play"></svg> ${h.cta}</button>
+          ${h.link ? `<a href="${h.link}" class="btn btn-ghost"><svg class="icon icon-sm" data-lucide="layout-grid"></svg> View category</a>` : ''}
         </div>
       </div>
     </div>
   `).join('') + `<div class="hero-dots">${slides.map((_, i) => `<span class="hero-dot ${i === 0 ? 'active' : ''}" data-dot="${i}"></span>`).join('')}</div>`;
 
   refreshIcons();
-  el.querySelectorAll('[data-hero-info]').forEach((btn) => btn.addEventListener('click', () => showMediaDetail(slides[+btn.dataset.heroInfo].detail)));
   el.querySelectorAll('[data-hero-cta]').forEach((btn) => btn.addEventListener('click', () => showMediaDetail(slides[+btn.dataset.heroCta].detail)));
   el.querySelectorAll('[data-dot]').forEach((dot) => dot.addEventListener('click', () => goToSlide(+dot.dataset.dot)));
   el.addEventListener('mouseenter', stopHeroAutoplay);
@@ -347,14 +367,12 @@ async function buildHero() {
   el.addEventListener('touchstart', stopHeroAutoplay, { passive: true });
   startHeroAutoplay();
 }
-
 function goToSlide(index) {
   const slides = document.querySelectorAll('.hero-slide');
   const dots = document.querySelectorAll('.hero-dot');
   slides.forEach((s) => s.classList.remove('active'));
   dots.forEach((d) => d.classList.remove('active'));
-  slides[index]?.classList.add('active');
-  dots[index]?.classList.add('active');
+  slides[index]?.classList.add('active'); dots[index]?.classList.add('active');
   state.heroIndex = index;
 }
 function startHeroAutoplay() {
@@ -363,15 +381,12 @@ function startHeroAutoplay() {
   if (count < 2) return;
   state.heroTimer = setInterval(() => goToSlide((state.heroIndex + 1) % count), 6000);
 }
-function stopHeroAutoplay() {
-  if (state.heroTimer) clearInterval(state.heroTimer);
-}
+function stopHeroAutoplay() { if (state.heroTimer) clearInterval(state.heroTimer); }
 
-/* ---------- 9. CATEGORY GRID ---------- */
+/* ---------- 10. SHARED CARD TEMPLATE ---------- */
 function emptyStateHTML(message) {
   return `<div class="card" style="grid-column:1/-1; text-align:center; color:var(--text-muted); padding:24px;">${message}</div>`;
 }
-
 function cardTemplate(cat, items) {
   if (cat.id === 'sports') {
     return items.map((m) => `
@@ -382,24 +397,9 @@ function cardTemplate(cat, items) {
           <div class="score-team">${m.away}</div>
         </div>
         <div class="score-minute">${m.league}${m.minute ? ' · LIVE ' + m.minute : ''}</div>
-        <div class="card-actions" style="margin-top:10px;">
-          <button class="chip-btn live-stats-btn"><svg class="icon icon-sm" data-lucide="bar-chart-2"></svg> Live stats</button>
-        </div>
+        <div class="card-actions" style="margin-top:10px;"><button class="chip-btn live-stats-btn"><svg class="icon icon-sm" data-lucide="bar-chart-2"></svg> Live stats</button></div>
       </article>
     `).join('');
-  }
-  if (cat.id === 'weather') {
-    const w = items;
-    return `
-      <article class="card">
-        <div class="weather-temp">${w.temp}°C</div>
-        <div class="card-sub">${w.city} · ${w.condition}</div>
-        <div class="weather-meta">
-          <span><svg class="icon icon-sm" data-lucide="droplets"></svg> ${w.humidity}</span>
-          <span><svg class="icon icon-sm" data-lucide="wind"></svg> ${w.wind}</span>
-        </div>
-      </article>
-    `;
   }
   if (cat.id === 'finance') {
     return items.map((c) => `
@@ -407,10 +407,7 @@ function cardTemplate(cat, items) {
         <div class="crypto-row">
           <div style="display:flex; align-items:center; gap:8px;">
             ${c.image ? `<img src="${c.image}" alt="" style="width:28px;height:28px;border-radius:50%;" />` : ''}
-            <div>
-              <div class="card-title">${c.name}</div>
-              <div class="card-sub">${c.symbol}</div>
-            </div>
+            <div><div class="card-title">${c.name}</div><div class="card-sub">${c.symbol}</div></div>
           </div>
           <div style="text-align:right;">
             <div class="crypto-price">$${c.price}</div>
@@ -420,7 +417,6 @@ function cardTemplate(cat, items) {
       </article>
     `).join('');
   }
-  // Generic poster-style card (movies, anime, music, recipes, news, gaming, books, travel)
   return items.map((m) => `
     <article class="card">
       <div class="card-media" style="${m.image ? '' : 'display:flex;align-items:center;justify-content:center;'}">
@@ -431,111 +427,442 @@ function cardTemplate(cat, items) {
       <div class="card-sub">${m.sub || ''}</div>
       <div class="card-actions">
         <button class="chip-btn primary card-play-btn">
-          <svg class="icon icon-sm" data-lucide="${cat.id === 'music' ? 'play' : 'play-circle'}"></svg>
-          ${cat.id === 'music' ? 'Play' : cat.id === 'recipes' ? 'Cook now' : cat.id === 'books' ? 'Read' : cat.id === 'news' ? 'Read' : cat.id === 'travel' ? 'Explore' : 'Watch'}
+          <svg class="icon icon-sm" data-lucide="${cat.id === 'music' ? 'play' : m.isMovie ? 'clapperboard' : 'play-circle'}"></svg>
+          ${cat.id === 'music' ? 'Play' : cat.id === 'recipes' ? 'Cook now' : cat.id === 'books' ? 'Read' : cat.id === 'news' ? 'Read' : cat.id === 'travel' ? 'Explore' : m.isMovie ? 'Trailer' : 'Watch'}
         </button>
         <button class="chip-btn card-info-btn"><svg class="icon icon-sm" data-lucide="info"></svg></button>
       </div>
     </article>
   `).join('');
 }
+function wireGenericCardButtons(container, cat, items) {
+  container.querySelectorAll('.card-play-btn').forEach((btn, i) => {
+    btn.addEventListener('click', () => {
+      const item = items[i];
+      if (cat.id === 'music') playTrack(item);
+      else if (cat.id === 'movies' && item.id) openTrailer(item);
+      else if (cat.id === 'recipes' && item.id) openRecipeDetail(item);
+      else if (item.url) window.open(item.url, '_blank', 'noopener');
+      else showMediaDetail(item);
+    });
+  });
+  container.querySelectorAll('.card-info-btn').forEach((btn, i) => btn.addEventListener('click', () => showMediaDetail(items[i])));
+}
 
-async function buildCategoryGrid() {
-  const grid = document.getElementById('category-grid');
-  grid.innerHTML = CATEGORIES.map((c) => `
-    <section class="card" style="grid-column: 1 / -1; padding:16px;" id="section-${c.id}">
-      <div class="section-heading" style="margin-bottom:12px;">
+/* ---------- 11. HOME VIEW (lite previews) ---------- */
+async function buildHomePreview() {
+  const container = document.getElementById('home-preview-container');
+  container.innerHTML = CATEGORIES.map((c) => `
+    <div style="margin-bottom:28px;">
+      <div class="preview-row-header">
         <h3 class="section-title" style="font-size:1rem;">
           <svg class="icon" data-lucide="${c.icon}"></svg> ${c.name}
           ${c.badge ? `<span class="nav-badge ${c.badge === 'LIVE' ? 'live' : ''}" style="margin-left:6px;">${c.badge}</span>` : ''}
         </h3>
+        <a href="#/${c.id}" class="view-all-link">View all <svg class="icon icon-sm" data-lucide="chevron-right"></svg></a>
       </div>
-      <div class="grid" id="grid-${c.id}"><div class="card-sub">Loading…</div></div>
-    </section>
+      <div class="preview-row" id="preview-${c.id}"><div class="card-sub">Loading…</div></div>
+    </div>
   `).join('');
   refreshIcons();
 
   for (const cat of CATEGORIES) {
     if (state.kidsSafe && cat.id !== 'anime') {
-      document.getElementById(`section-${cat.id}`).style.display = 'none';
+      document.getElementById(`preview-${cat.id}`).closest('div').style.display = 'none';
       continue;
     }
-    document.getElementById(`section-${cat.id}`).style.display = '';
-
     const endpoint = await buildEndpoint(cat.id);
-    const container = document.getElementById(`grid-${cat.id}`);
+    const container2 = document.getElementById(`preview-${cat.id}`);
     const { ok, data } = await fetchAPI(endpoint);
 
     if (cat.id === 'weather') {
       const w = ok ? normalizeWeather(data) : null;
-      container.innerHTML = w ? cardTemplate(cat, w) : emptyStateHTML('Weather is unavailable right now — check your OPENWEATHER_API_KEY.');
+      container2.innerHTML = w
+        ? `<article class="card" style="grid-column:span 2;"><div class="weather-temp">${w.temp}°C</div><div class="card-sub">${w.city} · ${w.condition}</div></article>`
+        : emptyStateHTML('Weather unavailable right now.');
       refreshIcons();
       continue;
     }
-
     if (cat.id === 'sports') {
       const matches = ok && Array.isArray(data) ? data.map(normalizeMatch) : null;
-      if (!matches) { container.innerHTML = emptyStateHTML('Could not load live sports right now.'); continue; }
-      if (!matches.length) { container.innerHTML = emptyStateHTML('No live matches at the moment — check back soon.'); continue; }
-      container.innerHTML = cardTemplate(cat, matches);
+      if (!matches || !matches.length) { container2.innerHTML = emptyStateHTML('No live matches right now.'); continue; }
+      container2.innerHTML = cardTemplate(cat, matches.slice(0, 3));
       refreshIcons();
-      container.querySelectorAll('.live-stats-btn').forEach((btn, i) => {
-        btn.addEventListener('click', () => showMediaDetail({
-          title: `${matches[i].home} vs ${matches[i].away}`,
-          sub: `${matches[i].league} · ${matches[i].homeScore}-${matches[i].awayScore}`,
-          description: matches[i].events.length
-            ? matches[i].events.map((e) => `⚽ ${e.time?.elapsed}' — ${e.player?.name || 'Unknown'} (${e.team?.name || ''})`).join('\n')
-            : 'No goal events yet.',
-        }));
-      });
       continue;
     }
-
     if (cat.id === 'finance') {
       const coins = ok && Array.isArray(data) ? data.map(normalizeCoin) : null;
-      if (!coins) { container.innerHTML = emptyStateHTML('Could not load crypto prices right now.'); continue; }
-      container.innerHTML = cardTemplate(cat, coins.slice(0, 8));
+      if (!coins) { container2.innerHTML = emptyStateHTML('Crypto prices unavailable.'); continue; }
+      container2.innerHTML = cardTemplate(cat, coins.slice(0, 4));
       refreshIcons();
       continue;
     }
 
-    // Generic poster categories
     const normalizer = NORMALIZERS[cat.id];
     let items = null;
     if (ok && Array.isArray(data)) items = data.map(normalizer);
-    else if (ok && data?.items && Array.isArray(data.items)) items = data.items.map(normalizer);
-
-    if (items === null) {
-      // request failed outright — offline fallback
-      items = SAMPLE[cat.id] || [];
-      if (items.length) container.innerHTML = cardTemplate(cat, items);
-      else container.innerHTML = emptyStateHTML('Could not load this section right now.');
-    } else if (!items.length) {
-      container.innerHTML = emptyStateHTML('No results found right now — check back soon.');
-    } else {
-      container.innerHTML = cardTemplate(cat, items);
-    }
-
-    refreshIcons();
+    if (items === null) items = SAMPLE[cat.id] || [];
     state.categoryItems[cat.id] = items;
 
-    const playButtons = container.querySelectorAll('.card-play-btn');
-    const infoButtons = container.querySelectorAll('.card-info-btn');
-    playButtons.forEach((btn, i) => {
-      btn.addEventListener('click', () => {
-        const item = state.categoryItems[cat.id][i];
-        if (cat.id === 'music') playTrack(item);
-        else if (item.url) window.open(item.url, '_blank', 'noopener');
-        else showMediaDetail(item);
-      });
-    });
-    infoButtons.forEach((btn, i) => {
-      btn.addEventListener('click', () => showMediaDetail(state.categoryItems[cat.id][i]));
-    });
+    if (!items.length) { container2.innerHTML = emptyStateHTML('No results right now.'); continue; }
+    container2.innerHTML = cardTemplate(cat, items.slice(0, 4));
+    refreshIcons();
+    wireGenericCardButtons(container2, cat, items.slice(0, 4));
   }
 }
 
-/* ---------- 10. MEDIA DETAIL MODAL ---------- */
+/* ---------- 12. CATEGORY PAGE (full page per category) ---------- */
+async function renderCategoryPage(cat) {
+  document.getElementById('category-page-title').textContent = cat.name;
+  document.getElementById('category-page-icon').setAttribute('data-lucide', cat.icon);
+  document.getElementById('category-page-toolbar').innerHTML = '';
+  document.getElementById('category-page-extra').innerHTML = '';
+  document.getElementById('category-page-grid').innerHTML = '<div class="card-sub">Loading…</div>';
+  refreshIcons();
+
+  if (cat.id === 'weather') return renderWeatherPage();
+  if (cat.id === 'sports') return renderSportsPage();
+  if (cat.id === 'finance') return renderFinancePage();
+  if (cat.id === 'movies') return renderMoviesPage();
+  if (cat.id === 'recipes') return renderRecipesPage();
+  if (cat.id === 'news') return renderNewsPage();
+  return renderGenericSearchPage(cat);
+}
+
+// Generic search + grid, used by anime, music, gaming, books, travel
+async function renderGenericSearchPage(cat) {
+  const toolbar = document.getElementById('category-page-toolbar');
+  const grid = document.getElementById('category-page-grid');
+  const searchable = ['anime', 'music', 'gaming', 'books'].includes(cat.id);
+
+  if (searchable) {
+    toolbar.innerHTML = `<div class="toolbar-search"><svg class="icon icon-sm" data-lucide="search"></svg><input type="text" id="cat-search-input" placeholder="Search ${cat.name.toLowerCase()}…" /></div>`;
+    refreshIcons();
+    let debounceTimer = null;
+    document.getElementById('cat-search-input').addEventListener('input', (e) => {
+      clearTimeout(debounceTimer);
+      const q = e.target.value.trim();
+      debounceTimer = setTimeout(() => { if (q) runCategorySearch(cat, q); else renderFullGrid(cat, state.categoryItems[cat.id] || []); }, 400);
+    });
+  }
+
+  let items = state.categoryItems[cat.id];
+  if (!items) {
+    const endpoint = await buildEndpoint(cat.id);
+    const { ok, data } = await fetchAPI(endpoint);
+    items = ok && Array.isArray(data) ? data.map(NORMALIZERS[cat.id]) : (SAMPLE[cat.id] || []);
+    state.categoryItems[cat.id] = items;
+  }
+  renderFullGrid(cat, items);
+}
+
+async function runCategorySearch(cat, q) {
+  const grid = document.getElementById('category-page-grid');
+  grid.innerHTML = '<div class="card-sub">Searching…</div>';
+  const searchPaths = {
+    anime: `/anime?q=${encodeURIComponent(q)}`,
+    music: `/music?q=${encodeURIComponent(q)}`,
+    gaming: `/gaming?q=${encodeURIComponent(q)}`,
+    books: `/books?q=${encodeURIComponent(q)}`,
+  };
+  const { ok, data } = await fetchAPI(searchPaths[cat.id]);
+  const items = ok && Array.isArray(data) ? data.map(NORMALIZERS[cat.id]) : [];
+  if (!items.length) { grid.innerHTML = emptyStateHTML(`No results for "${q}".`); return; }
+  renderFullGrid(cat, items);
+}
+
+function renderFullGrid(cat, items) {
+  const grid = document.getElementById('category-page-grid');
+  if (!items.length) { grid.innerHTML = emptyStateHTML('No results found right now.'); return; }
+  grid.innerHTML = cardTemplate(cat, items);
+  refreshIcons();
+  wireGenericCardButtons(grid, cat, items);
+}
+
+/* ---- Movies page: search + genre chips + Movies/Series toggle + trailer ---- */
+async function renderMoviesPage() {
+  const cat = CATEGORIES.find((c) => c.id === 'movies');
+  const toolbar = document.getElementById('category-page-toolbar');
+  const extra = document.getElementById('category-page-extra');
+  toolbar.innerHTML = `<div class="toolbar-search"><svg class="icon icon-sm" data-lucide="search"></svg><input type="text" id="movie-search-input" placeholder="Search movies…" /></div>`;
+  refreshIcons();
+
+  let debounceTimer = null;
+  document.getElementById('movie-search-input').addEventListener('input', (e) => {
+    clearTimeout(debounceTimer);
+    const q = e.target.value.trim();
+    debounceTimer = setTimeout(async () => {
+      if (!q) { renderFullGrid(cat, state.categoryItems.movies || []); return; }
+      const { ok, data } = await fetchAPI(`/movies?q=${encodeURIComponent(q)}`);
+      const items = ok && Array.isArray(data) ? data.map(NORMALIZERS.movies) : [];
+      renderFullGrid(cat, items);
+    }, 400);
+  });
+
+  const { ok: genresOk, data: genres } = await fetchAPI('/movies/genres');
+  if (genresOk && Array.isArray(genres)) {
+    extra.innerHTML = `<div class="chip-row" id="genre-chips">
+      <button class="filter-chip active" data-genre="">Trending</button>
+      ${genres.slice(0, 10).map((g) => `<button class="filter-chip" data-genre="${g.id}">${g.name}</button>`).join('')}
+    </div>`;
+    extra.querySelectorAll('.filter-chip').forEach((chip) => {
+      chip.addEventListener('click', async () => {
+        extra.querySelectorAll('.filter-chip').forEach((c) => c.classList.remove('active'));
+        chip.classList.add('active');
+        const genreId = chip.dataset.genre;
+        const grid = document.getElementById('category-page-grid');
+        grid.innerHTML = '<div class="card-sub">Loading…</div>';
+        const path = genreId ? `/movies/discover?genre=${genreId}` : '/movies/trending';
+        const { ok, data } = await fetchAPI(path);
+        const items = ok && Array.isArray(data) ? data.map(NORMALIZERS.movies) : (state.categoryItems.movies || []);
+        renderFullGrid(cat, items);
+      });
+    });
+  }
+
+  let items = state.categoryItems.movies;
+  if (!items) {
+    const { ok, data } = await fetchAPI('/movies/trending');
+    items = ok && Array.isArray(data) ? data.map(NORMALIZERS.movies) : (SAMPLE.movies || []);
+    state.categoryItems.movies = items;
+  }
+  renderFullGrid(cat, items);
+}
+
+async function openTrailer(item) {
+  const { ok, data } = await fetchAPI(`/movies/${item.id}`);
+  const videos = ok ? data.videos?.results : [];
+  const trailer = (videos || []).find((v) => v.site === 'YouTube' && v.type === 'Trailer') || (videos || [])[0];
+  document.getElementById('trailer-modal-title').textContent = item.title;
+  if (trailer) {
+    document.getElementById('trailer-modal-body').innerHTML = `<div style="position:relative;padding-top:56.25%;"><iframe src="https://www.youtube.com/embed/${trailer.key}?autoplay=1" style="position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:0 0 var(--radius-lg) var(--radius-lg);" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>`;
+  } else {
+    document.getElementById('trailer-modal-body').innerHTML = `<div style="padding:20px; color:var(--text-secondary);">No trailer is available for "${item.title}" yet.</div>`;
+  }
+  openModal('trailer-modal');
+}
+
+/* ---- Recipes page: ingredient search + full detail ---- */
+async function renderRecipesPage() {
+  const cat = CATEGORIES.find((c) => c.id === 'recipes');
+  const toolbar = document.getElementById('category-page-toolbar');
+  toolbar.innerHTML = `<div class="toolbar-search"><svg class="icon icon-sm" data-lucide="search"></svg><input type="text" id="recipe-ing-input" placeholder="Ingredients you have, comma separated…" value="chicken, rice, tomato, onion, garlic" /></div>`;
+  refreshIcons();
+  let debounceTimer = null;
+  document.getElementById('recipe-ing-input').addEventListener('input', (e) => {
+    clearTimeout(debounceTimer);
+    const q = e.target.value.trim();
+    debounceTimer = setTimeout(async () => {
+      if (!q) return;
+      const grid = document.getElementById('category-page-grid');
+      grid.innerHTML = '<div class="card-sub">Searching…</div>';
+      const { ok, data } = await fetchAPI(`/recipes?ingredients=${encodeURIComponent(q)}`);
+      const items = ok && Array.isArray(data) ? data.map(NORMALIZERS.recipes) : [];
+      state.categoryItems.recipes = items;
+      renderFullGrid(cat, items);
+    }, 500);
+  });
+
+  let items = state.categoryItems.recipes;
+  if (!items) {
+    const { ok, data } = await fetchAPI('/recipes?ingredients=chicken,rice,tomato,onion,garlic');
+    items = ok && Array.isArray(data) ? data.map(NORMALIZERS.recipes) : (SAMPLE.recipes || []);
+    state.categoryItems.recipes = items;
+  }
+  renderFullGrid(cat, items);
+}
+async function openRecipeDetail(item) {
+  const { ok, data } = await fetchAPI(`/recipes/${item.id}/information`);
+  if (!ok) { showMediaDetail(item); return; }
+  const ingredients = (data.extendedIngredients || []).map((i) => `<li>${i.original}</li>`).join('');
+  document.getElementById('media-modal-title').textContent = data.title;
+  document.getElementById('media-modal-body').innerHTML = `
+    ${data.image ? `<img src="${data.image}" alt="${data.title}" style="width:100%;border-radius:var(--radius-md);margin-bottom:16px;max-height:280px;object-fit:cover;" />` : ''}
+    <div class="card-sub" style="margin-bottom:10px;">${data.readyInMinutes ? data.readyInMinutes + ' mins' : ''}${data.servings ? ' · Serves ' + data.servings : ''}</div>
+    <h4 style="font-size:0.85rem; margin-bottom:8px;">Ingredients</h4>
+    <ul style="color:var(--text-secondary); font-size:0.85rem; line-height:1.7; padding-left:18px; margin-bottom:14px;">${ingredients || '<li>Not listed</li>'}</ul>
+    <p style="color:var(--text-secondary); font-size:0.85rem; line-height:1.6;">${(data.summary || '').replace(/<[^>]+>/g, '')}</p>
+  `;
+  openModal('media-modal');
+}
+
+/* ---- News page: category chips + search ---- */
+async function renderNewsPage() {
+  const cat = CATEGORIES.find((c) => c.id === 'news');
+  const extra = document.getElementById('category-page-extra');
+  extra.innerHTML = `<div class="chip-row" id="news-chips">${NEWS_CATEGORIES.map((n, i) => `<button class="filter-chip ${i === 0 ? 'active' : ''}" data-news-cat="${n}">${n[0].toUpperCase()}${n.slice(1)}</button>`).join('')}</div>`;
+  extra.querySelectorAll('.filter-chip').forEach((chip) => {
+    chip.addEventListener('click', async () => {
+      extra.querySelectorAll('.filter-chip').forEach((c) => c.classList.remove('active'));
+      chip.classList.add('active');
+      const grid = document.getElementById('category-page-grid');
+      grid.innerHTML = '<div class="card-sub">Loading…</div>';
+      const { ok, data } = await fetchAPI(`/news?category=${chip.dataset.newsCat}`);
+      const items = ok && Array.isArray(data) ? data.map(NORMALIZERS.news) : [];
+      state.categoryItems.news = items;
+      renderFullGrid(cat, items);
+    });
+  });
+  let items = state.categoryItems.news;
+  if (!items) {
+    const { ok, data } = await fetchAPI('/news?category=general');
+    items = ok && Array.isArray(data) ? data.map(NORMALIZERS.news) : (SAMPLE.news || []);
+    state.categoryItems.news = items;
+  }
+  renderFullGrid(cat, items);
+}
+
+/* ---- Weather page: search city + forecast ---- */
+async function renderWeatherPage() {
+  const toolbar = document.getElementById('category-page-toolbar');
+  toolbar.innerHTML = `
+    <div class="toolbar-search"><svg class="icon icon-sm" data-lucide="search"></svg><input type="text" id="city-search-input" placeholder="Search any city…" /></div>
+    <div class="city-search-results" id="city-search-results"></div>
+  `;
+  refreshIcons();
+  let debounceTimer = null;
+  document.getElementById('city-search-input').addEventListener('input', (e) => {
+    clearTimeout(debounceTimer);
+    const q = e.target.value.trim();
+    const resultsEl = document.getElementById('city-search-results');
+    if (!q) { resultsEl.innerHTML = ''; return; }
+    debounceTimer = setTimeout(async () => {
+      const { ok, data } = await fetchAPI(`/weather/search?q=${encodeURIComponent(q)}`);
+      if (!ok || !Array.isArray(data) || !data.length) { resultsEl.innerHTML = emptyStateHTML('City not found.'); return; }
+      resultsEl.innerHTML = data.map((c, i) => `<div class="city-result-item" data-lat="${c.lat}" data-lon="${c.lon}"><svg class="icon icon-sm" data-lucide="map-pin"></svg> ${c.name}${c.state ? ', ' + c.state : ''}, ${c.country}</div>`).join('');
+      refreshIcons();
+      resultsEl.querySelectorAll('.city-result-item').forEach((el) => {
+        el.addEventListener('click', () => {
+          state.currentCoords = { lat: el.dataset.lat, lon: el.dataset.lon };
+          resultsEl.innerHTML = '';
+          document.getElementById('city-search-input').value = '';
+          loadWeatherFor(state.currentCoords);
+        });
+      });
+    }, 400);
+  });
+  loadWeatherFor(await getUserCoords());
+}
+async function loadWeatherFor(coords) {
+  const grid = document.getElementById('category-page-grid');
+  const extra = document.getElementById('category-page-extra');
+  grid.innerHTML = '<div class="card-sub">Loading…</div>';
+  const { ok, data } = await fetchAPI(`/weather?lat=${coords.lat}&lon=${coords.lon}`);
+  const w = ok ? normalizeWeather(data) : null;
+  if (!w) { grid.innerHTML = emptyStateHTML('Weather is unavailable right now — check your OPENWEATHER_API_KEY.'); return; }
+  extra.innerHTML = `
+    <div class="weather-hero-card">
+      <div>
+        <div class="weather-hero-temp">${w.temp}°C</div>
+        <div class="card-sub">${w.city}${w.country ? ', ' + w.country : ''} · ${w.condition}</div>
+        <div class="weather-meta" style="margin-top:8px;">
+          <span><svg class="icon icon-sm" data-lucide="thermometer"></svg> Feels like ${w.feelsLike}°C</span>
+          <span><svg class="icon icon-sm" data-lucide="droplets"></svg> ${w.humidity}</span>
+          <span><svg class="icon icon-sm" data-lucide="wind"></svg> ${w.wind}</span>
+        </div>
+      </div>
+      <svg class="icon icon-lg" data-lucide="cloud-sun" style="width:64px;height:64px;color:var(--accent);"></svg>
+    </div>
+    <div class="forecast-row">${dailyForecast(w.forecast).map((d) => `
+      <div class="forecast-day-card"><div class="day">${d.label}</div><svg class="icon" data-lucide="cloud"></svg><div class="temp">${d.temp}°C</div></div>
+    `).join('')}</div>
+  `;
+  grid.innerHTML = '';
+  refreshIcons();
+}
+
+/* ---- Sports page: league selector + standings + live ---- */
+async function renderSportsPage() {
+  const cat = CATEGORIES.find((c) => c.id === 'sports');
+  const extra = document.getElementById('category-page-extra');
+  extra.innerHTML = `
+    <h4 style="font-size:0.9rem; margin-bottom:10px;">Live right now</h4>
+    <div class="grid" id="live-matches-grid" style="margin-bottom:24px;"><div class="card-sub">Loading…</div></div>
+    <h4 style="font-size:0.9rem; margin-bottom:10px;">League standings</h4>
+    <div class="league-select-row">
+      <select class="select-input" id="league-select" style="max-width:220px;">${LEAGUES.map((l) => `<option value="${l.id}">${l.name}</option>`).join('')}</select>
+    </div>
+    <div id="standings-container"><div class="card-sub">Select a league to see standings.</div></div>
+  `;
+  document.getElementById('category-page-grid').innerHTML = '';
+
+  const { ok, data } = await fetchAPI('/sports/live');
+  const matches = ok && Array.isArray(data) ? data.map(normalizeMatch) : null;
+  const liveGrid = document.getElementById('live-matches-grid');
+  if (!matches || !matches.length) liveGrid.innerHTML = emptyStateHTML('No live matches at the moment.');
+  else {
+    liveGrid.innerHTML = cardTemplate(cat, matches);
+    refreshIcons();
+    liveGrid.querySelectorAll('.live-stats-btn').forEach((btn, i) => {
+      btn.addEventListener('click', () => showMediaDetail({
+        title: `${matches[i].home} vs ${matches[i].away}`, sub: `${matches[i].league} · ${matches[i].homeScore}-${matches[i].awayScore}`,
+        description: matches[i].events.length ? matches[i].events.map((e) => `⚽ ${e.time?.elapsed}' — ${e.player?.name || 'Unknown'} (${e.team?.name || ''})`).join('\n') : 'No goal events yet.',
+      }));
+    });
+  }
+
+  async function loadStandings(leagueId) {
+    const container = document.getElementById('standings-container');
+    container.innerHTML = '<div class="card-sub">Loading standings…</div>';
+    const season = new Date().getFullYear();
+    const { ok, data } = await fetchAPI(`/sports/standings?league=${leagueId}&season=${season}`);
+    const table = ok && data?.[0]?.league?.standings?.[0];
+    if (!table) { container.innerHTML = emptyStateHTML('Standings unavailable for this league right now.'); return; }
+    container.innerHTML = `
+      <table class="standings-table">
+        <thead><tr><th>#</th><th>Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>Pts</th></tr></thead>
+        <tbody>${table.map((row) => `
+          <tr>
+            <td>${row.rank}</td>
+            <td class="team-cell"><img src="${row.team.logo}" alt="" /> ${row.team.name}</td>
+            <td>${row.all.played}</td><td>${row.all.win}</td><td>${row.all.draw}</td><td>${row.all.lose}</td>
+            <td><strong>${row.points}</strong></td>
+          </tr>
+        `).join('')}</tbody>
+      </table>
+    `;
+  }
+  document.getElementById('league-select').addEventListener('change', (e) => loadStandings(e.target.value));
+  loadStandings(LEAGUES[0].id);
+}
+
+/* ---- Finance page: full list + currency converter ---- */
+async function renderFinancePage() {
+  const cat = CATEGORIES.find((c) => c.id === 'finance');
+  const extra = document.getElementById('category-page-extra');
+  extra.innerHTML = `
+    <div class="converter-box">
+      <input type="number" id="conv-amount" value="1" style="width:100px;" />
+      <select id="conv-from" class="select-input" style="width:90px;">
+        ${['USD', 'TZS', 'KES', 'EUR'].map((c) => `<option value="${c}">${c}</option>`).join('')}
+      </select>
+      <svg class="icon" data-lucide="arrow-right"></svg>
+      <select id="conv-to" class="select-input" style="width:90px;">
+        ${['TZS', 'USD', 'KES', 'EUR'].map((c) => `<option value="${c}">${c}</option>`).join('')}
+      </select>
+      <button class="btn btn-primary" id="conv-btn">Convert</button>
+      <span class="converter-result" id="conv-result"></span>
+    </div>
+  `;
+  refreshIcons();
+  document.getElementById('conv-btn').addEventListener('click', async () => {
+    const amount = document.getElementById('conv-amount').value || 1;
+    const from = document.getElementById('conv-from').value;
+    const to = document.getElementById('conv-to').value;
+    const resultEl = document.getElementById('conv-result');
+    resultEl.textContent = '…';
+    const { ok, data } = await fetchAPI(`/finance/convert?from=${from}&to=${to}&amount=${amount}`);
+    resultEl.textContent = ok ? `${data.conversion_result?.toLocaleString()} ${to}` : 'Unavailable';
+  });
+
+  const { ok, data } = await fetchAPI('/finance/crypto');
+  const coins = ok && Array.isArray(data) ? data.map(normalizeCoin) : null;
+  const grid = document.getElementById('category-page-grid');
+  grid.innerHTML = coins ? cardTemplate(cat, coins) : emptyStateHTML('Crypto prices unavailable right now.');
+  refreshIcons();
+}
+
+/* ---------- 13. MEDIA DETAIL MODAL ---------- */
 function showMediaDetail(item) {
   if (!item) return;
   document.getElementById('media-modal-title').textContent = item.title || 'Details';
@@ -551,7 +878,7 @@ function showMediaDetail(item) {
   openModal('media-modal');
 }
 
-/* ---------- 11. DRAGGABLE FLOATING AUDIO PLAYER — real Deezer preview playback ---------- */
+/* ---------- 14. DRAGGABLE FLOATING AUDIO PLAYER — real Deezer preview playback ---------- */
 function playTrack(track) {
   if (!track?.preview) { showToast('No audio preview available for this track.', 'error'); return; }
   const player = document.getElementById('audio-player');
@@ -559,18 +886,14 @@ function playTrack(track) {
   document.getElementById('player-artist').textContent = track.sub;
   document.getElementById('player-cover').src = track.image || '';
   document.getElementById('bubble-cover').src = track.image || '';
-
   state.audioEl.src = track.preview;
   state.audioEl.play().catch(() => showToast('Playback was blocked — tap play again.', 'error'));
-
-  player.classList.remove('hidden');
-  player.classList.add('playing');
+  player.classList.remove('hidden'); player.classList.add('playing');
   state.audio.playing = true;
   document.querySelector('#player-play-btn svg').setAttribute('data-lucide', 'pause');
   refreshIcons();
   showToast(`Now playing "${track.title}"`, 'success');
 }
-
 function initAudioPlayer() {
   const player = document.getElementById('audio-player');
   const handle = document.getElementById('drag-handle');
@@ -585,12 +908,10 @@ function initAudioPlayer() {
     if (fill) fill.style.width = `${pct}%`;
   });
   state.audioEl.addEventListener('ended', () => {
-    state.audio.playing = false;
-    player.classList.remove('playing');
+    state.audio.playing = false; player.classList.remove('playing');
     document.querySelector('#player-play-btn svg')?.setAttribute('data-lucide', 'play');
     refreshIcons();
   });
-
   playBtn.addEventListener('click', () => {
     if (!state.audioEl.src) return;
     if (state.audioEl.paused) { state.audioEl.play(); state.audio.playing = true; }
@@ -599,42 +920,29 @@ function initAudioPlayer() {
     document.querySelector('#player-play-btn svg').setAttribute('data-lucide', state.audio.playing ? 'pause' : 'play');
     refreshIcons();
   });
-
   minimizeBtn.addEventListener('click', () => { player.classList.add('hidden'); bubble.classList.add('active'); });
   bubble.addEventListener('click', () => { bubble.classList.remove('active'); player.classList.remove('hidden'); });
   closeBtn.addEventListener('click', () => {
-    state.audioEl.pause();
-    state.audioEl.src = '';
-    player.classList.add('hidden');
-    bubble.classList.remove('active');
-    state.audio.playing = false;
+    state.audioEl.pause(); state.audioEl.src = '';
+    player.classList.add('hidden'); bubble.classList.remove('active'); state.audio.playing = false;
   });
 
-  // Drag logic — mouse + touch, snap to nearest edge on release
-  let dragging = false;
-  let startX = 0, startY = 0, originX = 0, originY = 0;
-  function onDown(x, y) {
-    dragging = true; startX = x; startY = y;
-    const rect = player.getBoundingClientRect();
-    originX = rect.left; originY = rect.top;
-    player.classList.add('dragging');
-  }
+  let dragging = false; let startX = 0, startY = 0, originX = 0, originY = 0;
+  function onDown(x, y) { dragging = true; startX = x; startY = y; const r = player.getBoundingClientRect(); originX = r.left; originY = r.top; player.classList.add('dragging'); }
   function onMove(x, y) {
     if (!dragging) return;
     const dx = x - startX, dy = y - startY;
     const newLeft = Math.min(Math.max(originX + dx, 8), window.innerWidth - player.offsetWidth - 8);
     const newTop = Math.min(Math.max(originY + dy, 8), window.innerHeight - player.offsetHeight - 8);
-    player.style.left = `${newLeft}px`; player.style.top = `${newTop}px`;
-    player.style.right = 'auto'; player.style.bottom = 'auto';
+    player.style.left = `${newLeft}px`; player.style.top = `${newTop}px`; player.style.right = 'auto'; player.style.bottom = 'auto';
   }
   function onUp() {
     if (!dragging) return;
     dragging = false; player.classList.remove('dragging');
-    const rect = player.getBoundingClientRect();
-    const center = rect.left + rect.width / 2;
-    const snapLeft = center < window.innerWidth / 2 ? 12 : window.innerWidth - rect.width - 12;
-    player.style.transition = 'left 0.3s var(--ease)';
-    player.style.left = `${snapLeft}px`;
+    const r = player.getBoundingClientRect();
+    const center = r.left + r.width / 2;
+    const snapLeft = center < window.innerWidth / 2 ? 12 : window.innerWidth - r.width - 12;
+    player.style.transition = 'left 0.3s var(--ease)'; player.style.left = `${snapLeft}px`;
     setTimeout(() => { player.style.transition = ''; }, 300);
   }
   handle.addEventListener('mousedown', (e) => onDown(e.clientX, e.clientY));
@@ -645,27 +953,22 @@ function initAudioPlayer() {
   window.addEventListener('touchend', onUp);
 }
 
-/* ---------- 12. SEARCH ---------- */
+/* ---------- 15. GLOBAL SEARCH (header) ---------- */
 function buildSearchResultsHTML(q) {
   const matches = [];
   CATEGORIES.forEach((cat) => {
     const items = state.categoryItems[cat.id];
     if (!Array.isArray(items)) return;
-    items.forEach((item) => {
-      if ((item.title || '').toLowerCase().includes(q)) matches.push({ cat, item });
-    });
+    items.forEach((item) => { if ((item.title || '').toLowerCase().includes(q)) matches.push({ cat, item }); });
   });
   return matches.length
     ? matches.slice(0, 8).map((m) => `
         <div class="search-result-item" data-search-cat="${m.cat.id}" data-search-idx="${state.categoryItems[m.cat.id].indexOf(m.item)}">
           <svg class="icon icon-sm" data-lucide="${m.cat.icon}"></svg>
-          <div>
-            <div>${m.item.title}</div>
-            <div class="search-result-category">${m.cat.name}</div>
-          </div>
+          <div><div>${m.item.title}</div><div class="search-result-category">${m.cat.name}</div></div>
         </div>
       `).join('')
-    : `<div class="search-result-item">No results for "${q}" yet — try after the page finishes loading.</div>`;
+    : `<div class="search-result-item">No results for "${q}" yet — try opening the category page and searching there.</div>`;
 }
 function wireSearchResultClicks(container) {
   container.querySelectorAll('[data-search-cat]').forEach((el) => {
@@ -693,49 +996,38 @@ function initSearch() {
   const desktopInput = document.getElementById('search-input');
   const desktopResults = document.getElementById('search-results');
   attachSearchField(desktopInput, desktopResults, { overlayToggle: true });
-  document.addEventListener('click', (e) => {
-    if (!desktopResults.contains(e.target) && e.target !== desktopInput) desktopResults.classList.remove('active');
-  });
+  document.addEventListener('click', (e) => { if (!desktopResults.contains(e.target) && e.target !== desktopInput) desktopResults.classList.remove('active'); });
 
   const mobileInput = document.getElementById('search-input-mobile');
   const mobileResults = document.getElementById('search-results-mobile');
   attachSearchField(mobileInput, mobileResults, { overlayToggle: false });
-
   document.getElementById('search-toggle-btn').addEventListener('click', () => {
-    openModal('search-modal');
-    mobileInput.value = ''; mobileResults.innerHTML = '';
+    openModal('search-modal'); mobileInput.value = ''; mobileResults.innerHTML = '';
     setTimeout(() => mobileInput.focus(), 150);
   });
 }
 
-/* ---------- 13. SETTINGS MODAL (theme / language / currency) ---------- */
-function applyTheme(theme) {
-  document.documentElement.setAttribute('data-theme', theme);
-}
+/* ---------- 16. SETTINGS ---------- */
+function applyTheme(theme) { document.documentElement.setAttribute('data-theme', theme); }
 function initSettings() {
   document.getElementById('settings-toggle').addEventListener('click', () => openModal('settings-modal'));
   document.getElementById('nav-settings').addEventListener('click', (e) => { e.preventDefault(); toggleSidebar(false); openModal('settings-modal'); });
-
   document.querySelectorAll('#theme-options .option-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('#theme-options .option-btn').forEach((b) => b.classList.remove('selected'));
       btn.classList.add('selected');
-      state.theme = btn.dataset.theme;
-      localStorage.setItem('mhv-theme', state.theme);
-      applyTheme(state.theme);
+      state.theme = btn.dataset.theme; localStorage.setItem('mhv-theme', state.theme); applyTheme(state.theme);
     });
   });
-
   const langSelect = document.getElementById('lang-select');
   langSelect.value = state.lang;
   langSelect.addEventListener('change', () => { state.lang = langSelect.value; localStorage.setItem('mhv-lang', state.lang); });
-
   const currencySelect = document.getElementById('currency-select');
   currencySelect.value = state.currency;
   currencySelect.addEventListener('change', () => { state.currency = currencySelect.value; localStorage.setItem('mhv-currency', state.currency); });
 }
 
-/* ---------- 14. KIDS SAFE MODE ---------- */
+/* ---------- 17. KIDS SAFE MODE ---------- */
 function initKidsSafe() {
   const toggle = document.getElementById('kids-toggle');
   toggle.classList.toggle('on', state.kidsSafe);
@@ -746,35 +1038,23 @@ function initKidsSafe() {
     toggle.classList.toggle('on', state.kidsSafe);
     toggle.setAttribute('aria-checked', String(state.kidsSafe));
     showToast(state.kidsSafe ? 'Kids Safe Mode turned on' : 'Kids Safe Mode turned off', 'success');
-    buildCategoryGrid();
+    buildHomePreview();
   });
 }
 
-/* ---------- 15. JOIN US DRAWER — icon-only social grid ---------- */
-const SOCIAL_ICONS = {
-  whatsapp: 'message-circle',
-  telegram: 'send',
-  youtube: 'youtube',
-  instagram: 'instagram',
-  tiktok: 'music-2',
-  facebook: 'facebook',
-};
+/* ---------- 18. JOIN US DRAWER — icon-only social grid ---------- */
+const SOCIAL_ICONS = { whatsapp: 'message-circle', telegram: 'send', youtube: 'youtube', instagram: 'instagram', tiktok: 'music-2', facebook: 'facebook' };
 async function initJoinUs() {
   document.getElementById('nav-join').addEventListener('click', async (e) => {
-    e.preventDefault();
-    toggleSidebar(false);
+    e.preventDefault(); toggleSidebar(false);
     const links = await fetchJSON('/community/links', {});
     document.getElementById('social-grid').innerHTML = Object.entries(SOCIAL_ICONS)
       .filter(([key]) => links[key])
-      .map(([key, icon]) => `
-        <a href="${links[key]}" target="_blank" rel="noopener" class="social-icon-link" aria-label="${key}">
-          <svg class="icon" data-lucide="${icon}"></svg>
-        </a>
-      `).join('') || `<div class="card-sub">No social links configured yet.</div>`;
+      .map(([key, icon]) => `<a href="${links[key]}" target="_blank" rel="noopener" class="social-icon-link" aria-label="${key}"><svg class="icon" data-lucide="${icon}"></svg></a>`)
+      .join('') || `<div class="card-sub">No social links configured yet.</div>`;
     refreshIcons();
     openModal('join-modal');
   });
-
   document.getElementById('feedback-submit').addEventListener('click', () => {
     const val = document.getElementById('feedback-input').value.trim();
     if (!val) { showToast('Write something before sending', 'error'); return; }
@@ -783,42 +1063,23 @@ async function initJoinUs() {
     showToast('Thanks for your feedback!', 'success');
   });
 }
-
 async function initFooterSocial() {
   const links = await fetchJSON('/community/links', {});
   document.getElementById('footer-social').innerHTML = Object.entries(SOCIAL_ICONS)
     .filter(([key]) => links[key])
-    .map(([key, icon]) => `
-      <a href="${links[key]}" target="_blank" rel="noopener" aria-label="${key}">
-        <svg class="icon icon-sm" data-lucide="${icon}"></svg>
-      </a>
-    `).join('');
+    .map(([key, icon]) => `<a href="${links[key]}" target="_blank" rel="noopener" aria-label="${key}"><svg class="icon icon-sm" data-lucide="${icon}"></svg></a>`)
+    .join('');
   refreshIcons();
 }
 
-/* ---------- 16. GOOGLE SIGN-IN (real, via Google Identity Services) ---------- */
+/* ---------- 19. GOOGLE SIGN-IN ---------- */
 let googleReady = false;
-function loadScript(src) {
-  return new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = src; s.onload = resolve; s.onerror = reject;
-    document.head.appendChild(s);
-  });
-}
-function decodeJwt(token) {
-  try {
-    const payload = token.split('.')[1];
-    return JSON.parse(decodeURIComponent(escape(atob(payload.replace(/-/g, '+').replace(/_/g, '/')))));
-  } catch { return null; }
-}
+function loadScript(src) { return new Promise((resolve, reject) => { const s = document.createElement('script'); s.src = src; s.onload = resolve; s.onerror = reject; document.head.appendChild(s); }); }
+function decodeJwt(token) { try { const payload = token.split('.')[1]; return JSON.parse(decodeURIComponent(escape(atob(payload.replace(/-/g, '+').replace(/_/g, '/'))))); } catch { return null; } }
 function renderSignedInState() {
   const btn = document.getElementById('signin-btn');
-  if (state.user) {
-    btn.innerHTML = `<img class="avatar" src="${state.user.picture}" alt="${state.user.name}" />`;
-  } else {
-    btn.innerHTML = `<svg class="icon icon-sm" data-lucide="log-in"></svg><span>Sign in</span>`;
-    refreshIcons();
-  }
+  if (state.user) btn.innerHTML = `<img class="avatar" src="${state.user.picture}" alt="${state.user.name}" />`;
+  else { btn.innerHTML = `<svg class="icon icon-sm" data-lucide="log-in"></svg><span>Sign in</span>`; refreshIcons(); }
 }
 function handleGoogleCredential(response) {
   const payload = decodeJwt(response.credential);
@@ -831,24 +1092,21 @@ function handleGoogleCredential(response) {
 async function initGoogleSignIn() {
   const config = await fetchJSON('/config', null);
   const clientId = config?.googleClientId;
-  if (!clientId) return; // sign-in stays inactive until a client ID is configured on the backend
+  if (!clientId) return;
   try {
     await loadScript('https://accounts.google.com/gsi/client');
     window.google.accounts.id.initialize({ client_id: clientId, callback: handleGoogleCredential, auto_select: false });
     googleReady = true;
-  } catch (e) { /* script blocked or offline — sign-in button will show a helpful toast instead */ }
+  } catch (e) { /* offline/blocked — sign-in stays inactive */ }
 }
 function initSignIn() {
   const stored = localStorage.getItem('mhv-user');
   if (stored) { try { state.user = JSON.parse(stored); } catch { /* ignore */ } }
   renderSignedInState();
   initGoogleSignIn();
-
   document.getElementById('signin-btn').addEventListener('click', () => {
     if (state.user) {
-      state.user = null;
-      localStorage.removeItem('mhv-user');
-      renderSignedInState();
+      state.user = null; localStorage.removeItem('mhv-user'); renderSignedInState();
       showToast('Signed out', 'info');
       if (googleReady) window.google.accounts.id.disableAutoSelect();
       return;
@@ -858,57 +1116,53 @@ function initSignIn() {
   });
 }
 
-/* ---------- 17. MODAL CLOSE WIRING ---------- */
+/* ---------- 20. MODAL CLOSE WIRING ---------- */
 function initModalClosers() {
-  document.querySelectorAll('[data-close-modal]').forEach((btn) => btn.addEventListener('click', () => closeModal(btn.dataset.closeModal)));
-  document.querySelectorAll('.modal-overlay').forEach((overlay) => overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(overlay.id); }));
+  document.querySelectorAll('[data-close-modal]').forEach((btn) => btn.addEventListener('click', () => {
+    closeModal(btn.dataset.closeModal);
+    if (btn.dataset.closeModal === 'trailer-modal') document.getElementById('trailer-modal-body').innerHTML = '';
+  }));
+  document.querySelectorAll('.modal-overlay').forEach((overlay) => overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) { closeModal(overlay.id); if (overlay.id === 'trailer-modal') document.getElementById('trailer-modal-body').innerHTML = ''; }
+  }));
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.active').forEach((m) => closeModal(m.id)); });
 }
 
-/* ---------- 18. SCROLL-TO-TOP ---------- */
+/* ---------- 21. SCROLL-TO-TOP ---------- */
 function initScrollTop() {
   const btn = document.getElementById('scroll-top-btn');
-  window.addEventListener('scroll', () => {
-    btn.classList.toggle('visible', window.scrollY > 500);
-  }, { passive: true });
+  window.addEventListener('scroll', () => btn.classList.toggle('visible', window.scrollY > 500), { passive: true });
   btn.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
 }
 
-/* ---------- 19. PWA INSTALL PROMPT ---------- */
+/* ---------- 22. PWA ---------- */
 function initPWA() {
   let deferredPrompt;
-  window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault(); deferredPrompt = e;
-    document.getElementById('install-banner').classList.add('active');
-  });
+  window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); deferredPrompt = e; document.getElementById('install-banner').classList.add('active'); });
   document.getElementById('install-btn').addEventListener('click', async () => {
     document.getElementById('install-banner').classList.remove('active');
     if (deferredPrompt) { deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt = null; }
   });
   document.getElementById('install-dismiss').addEventListener('click', () => document.getElementById('install-banner').classList.remove('active'));
-
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
     let hasReloaded = false;
-    navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (hasReloaded) return;
-      hasReloaded = true;
-      window.location.reload();
-    });
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (hasReloaded) return; hasReloaded = true; window.location.reload(); });
   }
 }
 
-/* ---------- 20. INIT ---------- */
+/* ---------- 23. INIT ---------- */
 function init() {
   applyTheme(state.theme);
   document.getElementById('theme-options').querySelectorAll('.option-btn').forEach((b) => b.classList.toggle('selected', b.dataset.theme === state.theme));
 
   document.getElementById('menu-toggle').addEventListener('click', () => toggleSidebar());
   document.getElementById('sidebar-overlay').addEventListener('click', () => toggleSidebar(false));
+  document.getElementById('category-back-btn').addEventListener('click', () => { location.hash = '#/'; });
 
   buildSidebar();
   buildHero();
-  buildCategoryGrid();
+  buildHomePreview();
   initAudioPlayer();
   initSearch();
   initSettings();
@@ -919,6 +1173,9 @@ function init() {
   initModalClosers();
   initScrollTop();
   initPWA();
+
+  window.addEventListener('hashchange', router);
+  router();
 
   refreshIcons();
 }
