@@ -825,8 +825,123 @@ input, select { font-family: inherit; }
 }
 
 /* ============================================================
-   RESPONSIVE
+   HOME PREVIEW ROWS (lite homepage)
    ============================================================ */
+.preview-row-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px;
+}
+.view-all-link {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 0.8rem; font-weight: 600; color: var(--accent);
+}
+.preview-row {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(160px, 1fr);
+  gap: 14px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scroll-snap-type: x proximity;
+}
+.preview-row .card { scroll-snap-align: start; }
+.preview-row::-webkit-scrollbar { height: 6px; }
+.preview-row::-webkit-scrollbar-thumb { background: var(--border-color-strong); border-radius: var(--radius-pill); }
+
+/* ============================================================
+   CATEGORY PAGE
+   ============================================================ */
+.back-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  font-size: 0.85rem; color: var(--text-secondary);
+  padding: 8px 4px; margin-bottom: 14px;
+  transition: color 0.2s var(--ease);
+}
+.back-btn:hover { color: var(--accent); }
+
+.category-page-header {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 18px;
+}
+.category-page-header .icon { color: var(--accent); }
+.category-page-title {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.toolbar-search {
+  position: relative;
+  margin-bottom: 16px;
+}
+.toolbar-search input {
+  width: 100%; height: 44px;
+  border-radius: var(--radius-pill);
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 0 16px 0 42px;
+  font-size: 0.9rem;
+}
+.toolbar-search input:focus { border-color: var(--accent); }
+.toolbar-search .icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--text-muted); }
+
+.chip-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; margin-bottom: 16px; }
+.filter-chip {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  border-radius: var(--radius-pill);
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border-color);
+  font-size: 0.82rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  transition: background 0.2s var(--ease), color 0.2s var(--ease), border-color 0.2s var(--ease);
+}
+.filter-chip.active, .filter-chip:hover { background: var(--accent-dim); border-color: rgba(255,0,85,0.4); color: var(--accent); }
+
+/* Weather category page */
+.weather-hero-card {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 24px; border-radius: var(--radius-lg);
+  background: var(--card-bg); border: 1px solid var(--border-color);
+  margin-bottom: 18px;
+}
+.weather-hero-temp { font-family: var(--font-mono); font-size: 3.2rem; font-weight: 700; }
+.forecast-row { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(90px,1fr); gap: 10px; overflow-x: auto; margin-bottom: 20px; }
+.forecast-day-card { text-align: center; padding: 14px 8px; border-radius: var(--radius-md); background: var(--card-bg); border: 1px solid var(--border-color); }
+.forecast-day-card .day { font-size: 0.72rem; color: var(--text-muted); margin-bottom: 6px; }
+.forecast-day-card .temp { font-family: var(--font-mono); font-weight: 700; }
+.city-search-results { margin-top: 8px; }
+.city-result-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; border-radius: var(--radius-sm);
+  background: var(--card-bg); border: 1px solid var(--border-color);
+  margin-bottom: 6px; font-size: 0.85rem;
+}
+.city-result-item:hover { border-color: var(--accent); }
+
+/* Sports category page */
+.league-select-row { display: flex; gap: 10px; margin-bottom: 18px; }
+.standings-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.standings-table th { text-align: left; color: var(--text-muted); font-weight: 500; padding: 8px 6px; border-bottom: 1px solid var(--border-color); }
+.standings-table td { padding: 8px 6px; border-bottom: 1px solid var(--border-color); }
+.standings-table .team-cell { display: flex; align-items: center; gap: 8px; }
+.standings-table img { width: 18px; height: 18px; object-fit: contain; }
+
+/* Finance converter */
+.converter-box {
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  padding: 16px; border-radius: var(--radius-md);
+  background: var(--card-bg); border: 1px solid var(--border-color);
+  margin-bottom: 20px;
+}
+.converter-box input, .converter-box select {
+  height: 42px; border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.05); border: 1px solid var(--border-color);
+  color: var(--text-primary); padding: 0 10px;
+}
+.converter-result { font-family: var(--font-mono); font-weight: 700; font-size: 1.1rem; }
 /* Search bar responsiveness is handled by #search-wrap-desktop /
    .search-toggle-btn rules above. */
 
