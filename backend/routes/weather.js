@@ -4,6 +4,20 @@ const { cacheMiddleware } = require('../middleware/cache');
 
 const router = express.Router();
 
+// GET /api/weather/search?q=Nairobi -- turns a city name into lat/lon options
+router.get('/search', cacheMiddleware(86400), async (req, res, next) => {
+  try {
+    const { q } = req.query;
+    if (!q) return res.status(400).json({ error: true, message: 'Missing "q" query param' });
+    const { data } = await axios.get('https://api.openweathermap.org/geo/1.0/direct', {
+      params: { q, limit: 5, appid: process.env.OPENWEATHER_API_KEY },
+    });
+    res.json(data);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/weather?lat=-6.79&lon=39.20
 router.get('/', cacheMiddleware(1800), async (req, res, next) => {
   try {
