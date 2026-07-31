@@ -54,6 +54,18 @@
     <button class="icon-btn" id="settings-toggle" aria-label="Open settings">
       <svg class="icon" data-lucide="settings"></svg>
     </button>
+
+    <div class="user-menu" id="user-menu" style="display:none;">
+      <button class="avatar-btn" id="user-avatar-btn" aria-label="Account menu" aria-haspopup="true" aria-expanded="false">
+        <img class="avatar" id="user-avatar-img" src="" alt="" referrerpolicy="no-referrer" />
+        <span class="avatar-fallback" id="user-avatar-fallback"></span>
+      </button>
+      <div class="user-dropdown" id="user-dropdown">
+        <div class="user-dropdown-name" id="user-dropdown-name"></div>
+        <button class="user-dropdown-item" id="dropdown-settings-btn"><svg class="icon icon-sm" data-lucide="settings"></svg> Settings</button>
+        <button class="user-dropdown-item logout" id="dropdown-logout-btn"><svg class="icon icon-sm" data-lucide="log-out"></svg> Logout</button>
+      </div>
+    </div>
   </div>
 </header>
 
