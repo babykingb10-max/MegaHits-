@@ -61,13 +61,31 @@
 <section class="hero-slider" id="hero-slider" aria-label="Trending highlights"></section>
 
 <main id="app-main">
-  <!-- ============ 3. CATEGORY PREVIEW GRID ============ -->
-  <section class="section">
-    <div class="section-heading">
-      <h2 class="section-title"><svg class="icon" data-lucide="layout-grid"></svg> Browse categories</h2>
-    </div>
-    <div class="grid" id="category-grid"></div>
-  </section>
+  <!-- ============ HOME VIEW (lite previews) ============ -->
+  <div id="view-home">
+    <section class="section">
+      <div class="section-heading">
+        <h2 class="section-title"><svg class="icon" data-lucide="layout-grid"></svg> Browse categories</h2>
+      </div>
+      <div id="home-preview-container"></div>
+    </section>
+  </div>
+
+  <!-- ============ CATEGORY VIEW (full page per category) ============ -->
+  <div id="view-category" style="display:none;">
+    <section class="section">
+      <button class="back-btn" id="category-back-btn">
+        <svg class="icon icon-sm" data-lucide="arrow-left"></svg> Back to Home
+      </button>
+      <div class="category-page-header">
+        <svg class="icon icon-lg" id="category-page-icon" data-lucide="film"></svg>
+        <h1 class="category-page-title" id="category-page-title">Category</h1>
+      </div>
+      <div id="category-page-toolbar"></div>
+      <div id="category-page-extra"></div>
+      <div class="grid" id="category-page-grid"></div>
+    </section>
+  </div>
 </main>
 
 <!-- ============ 4. DRAGGABLE FLOATING AUDIO PLAYER ============ -->
@@ -177,6 +195,17 @@
     <div class="modal-footer">
       <button class="btn btn-primary btn-block" data-close-modal="settings-modal">Save &amp; close</button>
     </div>
+  </div>
+</div>
+
+<!-- ============ TRAILER MODAL ============ -->
+<div class="modal-overlay" id="trailer-modal">
+  <div class="modal-panel wide">
+    <div class="modal-header">
+      <div class="modal-title"><svg class="icon" data-lucide="clapperboard"></svg> <span id="trailer-modal-title">Trailer</span></div>
+      <button class="icon-btn" data-close-modal="trailer-modal" aria-label="Close trailer"><svg class="icon" data-lucide="x"></svg></button>
+    </div>
+    <div class="modal-body" id="trailer-modal-body" style="padding:0;"></div>
   </div>
 </div>
 
