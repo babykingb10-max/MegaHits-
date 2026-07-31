@@ -13,6 +13,39 @@ function tmdbClient() {
   });
 }
 
+// GET /api/movies/genres
+router.get('/genres', cacheMiddleware(86400), async (req, res, next) => {
+  try {
+    const { data } = await tmdbClient().get('/genre/movie/list');
+    res.json(data.genres);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/movies/discover?genre=28
+router.get('/discover', cacheMiddleware(3600), async (req, res, next) => {
+  try {
+    const { genre } = req.query;
+    const { data } = await tmdbClient().get('/discover/movie', {
+      params: { with_genres: genre, sort_by: 'popularity.desc' },
+    });
+    res.json(data.results);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/movies/tv/trending
+router.get('/tv/trending', cacheMiddleware(3600), async (req, res, next) => {
+  try {
+    const { data } = await tmdbClient().get('/trending/tv/week');
+    res.json(data.results);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/movies/trending
 router.get('/trending', cacheMiddleware(3600), async (req, res, next) => {
   try {
