@@ -225,16 +225,29 @@
   </div>
 </div>
 
-<!-- ============ TRAILER MODAL ============ -->
-<div class="modal-overlay" id="trailer-modal">
-  <div class="modal-panel wide">
-    <div class="modal-header">
-      <div class="modal-title"><svg class="icon" data-lucide="clapperboard"></svg> <span id="trailer-modal-title">Trailer</span></div>
-      <button class="icon-btn" data-close-modal="trailer-modal" aria-label="Close trailer"><svg class="icon" data-lucide="x"></svg></button>
+<!-- ============ FLOATING TRAILER / TRAILER PLAYER WINDOW ============ -->
+<div class="trailer-window hidden" id="trailer-window">
+  <div class="trailer-window-header" id="trailer-drag-handle">
+    <svg class="icon icon-sm" data-lucide="grip-vertical" style="color:var(--text-muted); flex-shrink:0;"></svg>
+    <span class="trailer-window-title-text" id="trailer-window-title">Trailer</span>
+    <div class="trailer-window-actions">
+      <button id="trailer-minimize-btn" aria-label="Minimize"><svg class="icon icon-sm" data-lucide="minus"></svg></button>
+      <button id="trailer-maximize-btn" aria-label="Maximize"><svg class="icon icon-sm" data-lucide="maximize-2"></svg></button>
+      <button id="trailer-close-btn" aria-label="Close"><svg class="icon icon-sm" data-lucide="x"></svg></button>
     </div>
-    <div class="modal-body" id="trailer-modal-body" style="padding:0;"></div>
+  </div>
+  <div class="trailer-window-body" id="trailer-window-body"></div>
+  <div class="trailer-window-controls">
+    <button aria-label="Rewind"><svg class="icon icon-sm" data-lucide="rewind"></svg></button>
+    <button aria-label="Play/Pause" id="trailer-deco-play"><svg class="icon icon-sm" data-lucide="play"></svg></button>
+    <button aria-label="Stop" class="primary"><svg class="icon" data-lucide="square"></svg></button>
+    <button aria-label="Replay"><svg class="icon icon-sm" data-lucide="rotate-ccw"></svg></button>
+    <button aria-label="Forward"><svg class="icon icon-sm" data-lucide="fast-forward"></svg></button>
   </div>
 </div>
+<button class="trailer-bubble" id="trailer-bubble" aria-label="Restore trailer">
+  <svg class="icon" data-lucide="clapperboard"></svg>
+</button>
 
 <!-- ============ 6b. MEDIA DETAIL MODAL ============ -->
 <div class="modal-overlay" id="media-modal">
