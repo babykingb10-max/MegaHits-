@@ -140,6 +140,7 @@ const NORMALIZERS = {
     isMovie: true,
   }),
   anime: (raw) => ({
+    id: raw.mal_id || null,
     title: raw.title || raw.title_english || 'Untitled',
     sub: `${raw.episodes ?? '?'} episodes${raw.rating ? ' · ' + raw.rating.split(' ')[0] : ''}`,
     rating: raw.score ? raw.score.toFixed(1) : null,
@@ -154,6 +155,7 @@ const NORMALIZERS = {
     description: `${raw.title || ''}${raw.album?.title ? ' — from ' + raw.album.title : ''}`,
   }),
   gaming: (raw) => ({
+    id: raw.id || null,
     title: raw.name || 'Untitled',
     sub: `${(raw.platforms || []).slice(0, 2).map((p) => p.platform?.name).filter(Boolean).join(', ') || 'Multi-platform'}${raw.metacritic ? ' · Metacritic ' + raw.metacritic : ''}`,
     rating: raw.metacritic ? String(raw.metacritic) : null,
@@ -290,11 +292,16 @@ function router() {
   const cat = CATEGORIES.find((c) => c.id === hash);
   document.querySelectorAll('.sidebar-link[data-category]').forEach((l) => l.classList.toggle('active', l.dataset.category === hash));
   window.scrollTo({ top: 0, behavior: 'instant' in document.documentElement.style ? 'instant' : 'auto' });
+  const hero = document.getElementById('hero-slider');
   if (cat) {
+    hero.style.display = 'none';
+    stopHeroAutoplay();
     document.getElementById('view-home').style.display = 'none';
     document.getElementById('view-category').style.display = '';
     renderCategoryPage(cat);
   } else {
+    hero.style.display = '';
+    startHeroAutoplay();
     document.getElementById('view-category').style.display = 'none';
     document.getElementById('view-home').style.display = '';
   }
@@ -440,7 +447,7 @@ function cardTemplate(cat, items) {
       <div class="card-actions">
         <button class="chip-btn primary card-play-btn">
           <svg class="icon icon-sm" data-lucide="${cat.id === 'music' ? 'play' : m.isMovie ? 'clapperboard' : 'play-circle'}"></svg>
-          ${cat.id === 'music' ? 'Play' : cat.id === 'recipes' ? 'Cook now' : cat.id === 'books' ? 'Read' : cat.id === 'news' ? 'Read' : cat.id === 'travel' ? 'Explore' : m.isMovie ? 'Trailer' : 'Watch'}
+          ${cat.id === 'music' ? 'Play' : cat.id === 'recipes' ? 'Steps' : cat.id === 'books' ? 'Read' : cat.id === 'news' ? 'Read' : cat.id === 'travel' ? 'Explore' : m.isMovie ? 'Trailer' : 'Watch'}
         </button>
         <button class="chip-btn card-info-btn"><svg class="icon icon-sm" data-lucide="info"></svg></button>
       </div>
@@ -453,6 +460,8 @@ function wireGenericCardButtons(container, cat, items) {
       const item = items[i];
       if (cat.id === 'music') playTrack(item);
       else if (cat.id === 'movies' && item.id) openTrailer(item);
+      else if (cat.id === 'anime') openAnimeTrailer(item);
+      else if (cat.id === 'gaming') openGameTrailer(item);
       else if (cat.id === 'recipes' && item.id) openRecipeDetail(item);
       else if (item.url) window.open(item.url, '_blank', 'noopener');
       else showMediaDetail(item);
@@ -716,17 +725,101 @@ async function renderMoviesPage() {
   renderFullGrid(cat, items);
 }
 
+/* ---- Floating trailer/media window: shared by movies, anime, games ---- */
+function openMediaWindow({ title, type, src }) {
+  document.getElementById('trailer-window-title').textContent = title || 'Trailer';
+  const body = document.getElementById('trailer-window-body');
+  if (type === 'youtube' && src) {
+    body.innerHTML = `<iframe src="https://www.youtube.com/embed/${src}?autoplay=1" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+  } else if (type === 'video' && src) {
+    body.innerHTML = `<video src="${src}" controls autoplay playsinline></video>`;
+  } else {
+    body.innerHTML = `<div class="trailer-window-empty">No trailer is available for "${title}" yet.</div>`;
+  }
+  const win = document.getElementById('trailer-window');
+  win.classList.remove('hidden');
+  document.getElementById('trailer-bubble').classList.remove('active');
+}
+function closeMediaWindow() {
+  const win = document.getElementById('trailer-window');
+  win.classList.add('hidden');
+  win.classList.remove('maximized');
+  document.getElementById('trailer-window-body').innerHTML = '';
+  document.getElementById('trailer-bubble').classList.remove('active');
+}
+
 async function openTrailer(item) {
   const { ok, data } = await fetchAPI(`/movies/${item.id}`);
   const videos = ok ? data.videos?.results : [];
   const trailer = (videos || []).find((v) => v.site === 'YouTube' && v.type === 'Trailer') || (videos || [])[0];
-  document.getElementById('trailer-modal-title').textContent = item.title;
-  if (trailer) {
-    document.getElementById('trailer-modal-body').innerHTML = `<div style="position:relative;padding-top:56.25%;"><iframe src="https://www.youtube.com/embed/${trailer.key}?autoplay=1" style="position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:0 0 var(--radius-lg) var(--radius-lg);" allow="autoplay; encrypted-media" allowfullscreen></iframe></div>`;
-  } else {
-    document.getElementById('trailer-modal-body').innerHTML = `<div style="padding:20px; color:var(--text-secondary);">No trailer is available for "${item.title}" yet.</div>`;
+  openMediaWindow({ title: item.title, type: trailer ? 'youtube' : 'none', src: trailer?.key });
+}
+async function openAnimeTrailer(item) {
+  if (!item.id) { showMediaDetail(item); return; }
+  const { ok, data } = await fetchAPI(`/anime/${item.id}`);
+  const ytId = ok ? data.trailer?.youtube_id : null;
+  openMediaWindow({ title: item.title, type: ytId ? 'youtube' : 'none', src: ytId });
+}
+async function openGameTrailer(item) {
+  if (!item.id) { showMediaDetail(item); return; }
+  const { ok, data } = await fetchAPI(`/gaming/${item.id}/trailer`);
+  const clip = ok && Array.isArray(data) && data.length ? data[0] : null;
+  const src = clip?.data?.max || clip?.data?.['480'];
+  openMediaWindow({ title: item.title, type: src ? 'video' : 'none', src });
+}
+
+function initTrailerWindow() {
+  const win = document.getElementById('trailer-window');
+  const header = document.getElementById('trailer-drag-handle');
+  const bubble = document.getElementById('trailer-bubble');
+
+  document.getElementById('trailer-close-btn').addEventListener('click', closeMediaWindow);
+  document.getElementById('trailer-minimize-btn').addEventListener('click', () => {
+    win.classList.add('hidden');
+    bubble.classList.add('active');
+  });
+  bubble.addEventListener('click', () => {
+    win.classList.remove('hidden');
+    bubble.classList.remove('active');
+  });
+  document.getElementById('trailer-maximize-btn').addEventListener('click', (e) => {
+    const nowMaximized = win.classList.toggle('maximized');
+    e.currentTarget.querySelector('svg').setAttribute('data-lucide', nowMaximized ? 'minimize-2' : 'maximize-2');
+    refreshIcons();
+    if (nowMaximized) { win.style.left = ''; win.style.top = ''; }
+  });
+
+  // Decorative transport controls — visual feedback only, no real video control.
+  const decoPlay = document.getElementById('trailer-deco-play');
+  decoPlay.addEventListener('click', () => {
+    const playing = decoPlay.dataset.playing === '1';
+    decoPlay.querySelector('svg').setAttribute('data-lucide', playing ? 'play' : 'pause');
+    decoPlay.dataset.playing = playing ? '0' : '1';
+    refreshIcons();
+  });
+
+  // Drag (mouse + touch) — disabled while maximized
+  let dragging = false; let startX = 0, startY = 0, originX = 0, originY = 0;
+  function onDown(x, y) {
+    if (win.classList.contains('maximized')) return;
+    dragging = true; startX = x; startY = y;
+    const r = win.getBoundingClientRect(); originX = r.left; originY = r.top;
+    header.classList.add('dragging');
   }
-  openModal('trailer-modal');
+  function onMove(x, y) {
+    if (!dragging) return;
+    const dx = x - startX, dy = y - startY;
+    const newLeft = Math.min(Math.max(originX + dx, 8), window.innerWidth - win.offsetWidth - 8);
+    const newTop = Math.min(Math.max(originY + dy, 8), window.innerHeight - win.offsetHeight - 8);
+    win.style.left = `${newLeft}px`; win.style.top = `${newTop}px`; win.style.right = 'auto';
+  }
+  function onUp() { dragging = false; header.classList.remove('dragging'); }
+  header.addEventListener('mousedown', (e) => { if (!e.target.closest('button')) onDown(e.clientX, e.clientY); });
+  window.addEventListener('mousemove', (e) => onMove(e.clientX, e.clientY));
+  window.addEventListener('mouseup', onUp);
+  header.addEventListener('touchstart', (e) => { if (!e.target.closest('button')) onDown(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
+  window.addEventListener('touchmove', (e) => { if (dragging) onMove(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
+  window.addEventListener('touchend', onUp);
 }
 
 /* ---- Recipes page: ingredient search + full detail ---- */
@@ -1289,14 +1382,13 @@ function initSignIn() {
 
 /* ---------- 20. MODAL CLOSE WIRING ---------- */
 function initModalClosers() {
-  document.querySelectorAll('[data-close-modal]').forEach((btn) => btn.addEventListener('click', () => {
-    closeModal(btn.dataset.closeModal);
-    if (btn.dataset.closeModal === 'trailer-modal') document.getElementById('trailer-modal-body').innerHTML = '';
-  }));
-  document.querySelectorAll('.modal-overlay').forEach((overlay) => overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) { closeModal(overlay.id); if (overlay.id === 'trailer-modal') document.getElementById('trailer-modal-body').innerHTML = ''; }
-  }));
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.active').forEach((m) => closeModal(m.id)); });
+  document.querySelectorAll('[data-close-modal]').forEach((btn) => btn.addEventListener('click', () => closeModal(btn.dataset.closeModal)));
+  document.querySelectorAll('.modal-overlay').forEach((overlay) => overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(overlay.id); }));
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    document.querySelectorAll('.modal-overlay.active').forEach((m) => closeModal(m.id));
+    if (!document.getElementById('trailer-window').classList.contains('hidden')) closeMediaWindow();
+  });
 }
 
 /* ---------- 21. SCROLL-TO-TOP ---------- */
@@ -1335,6 +1427,7 @@ function init() {
   buildHero();
   buildHomePreview();
   initAudioPlayer();
+  initTrailerWindow();
   initSearch();
   initSettings();
   initKidsSafe();
