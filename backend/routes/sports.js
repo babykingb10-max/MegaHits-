@@ -22,11 +22,21 @@ router.get('/live', cacheMiddleware(60), async (req, res, next) => {
 });
 
 // GET /api/sports/standings?league=39&season=2026
+// Free API-Football plans frequently don't have current-year data ready yet,
+// so we try the requested season, then step backwards until one responds.
 router.get('/standings', cacheMiddleware(3600), async (req, res, next) => {
   try {
-    const { league, season } = req.query;
-    const { data } = await apiFootballClient().get('/standings', { params: { league, season } });
-    res.json(data.response);
+    const { league } = req.query;
+    const requestedSeason = parseInt(req.query.season, 10) || new Date().getFullYear();
+    const seasonsToTry = [requestedSeason, requestedSeason - 1, requestedSeason - 2];
+
+    for (const season of seasonsToTry) {
+      const { data } = await apiFootballClient().get('/standings', { params: { league, season } });
+      if (data.response?.length) {
+        return res.json({ season, response: data.response });
+      }
+    }
+    res.json({ season: null, response: [] });
   } catch (err) {
     next(err);
   }
