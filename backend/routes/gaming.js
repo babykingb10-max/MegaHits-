@@ -30,4 +30,16 @@ router.get('/', cacheMiddleware(1800), async (req, res, next) => {
   }
 });
 
+// GET /api/gaming/:id/trailer
+router.get('/:id/trailer', cacheMiddleware(86400), async (req, res, next) => {
+  try {
+    const { data } = await axios.get(`https://api.rawg.io/api/games/${req.params.id}/movies`, {
+      params: { key: process.env.RAWG_API_KEY },
+    });
+    res.json(data.results || []);
+  } catch (err) {
+    next(err);
+  }
+});
+
 module.exports = router;
