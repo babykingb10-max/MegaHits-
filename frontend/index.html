@@ -57,11 +57,10 @@
     <div class="search-results" id="search-results"></div>
   </div>
 
-  <button class="icon-btn search-toggle-btn" id="search-toggle-btn" aria-label="Open search">
-    <svg class="icon" data-lucide="search"></svg>
-  </button>
-
   <div class="header-right">
+    <button class="icon-btn search-toggle-btn" id="search-toggle-btn" aria-label="Open search">
+      <svg class="icon" data-lucide="search"></svg>
+    </button>
     <button class="signin-btn" id="signin-btn">
       <svg class="icon icon-sm" data-lucide="log-in"></svg>
       <span>Sign in</span>
@@ -238,11 +237,11 @@
   </div>
   <div class="trailer-window-body" id="trailer-window-body"></div>
   <div class="trailer-window-controls">
-    <button aria-label="Rewind"><svg class="icon icon-sm" data-lucide="rewind"></svg></button>
+    <button aria-label="Rewind 10s" id="trailer-btn-rewind"><svg class="icon icon-sm" data-lucide="rewind"></svg></button>
     <button aria-label="Play/Pause" id="trailer-deco-play"><svg class="icon icon-sm" data-lucide="play"></svg></button>
-    <button aria-label="Stop" class="primary"><svg class="icon" data-lucide="square"></svg></button>
-    <button aria-label="Replay"><svg class="icon icon-sm" data-lucide="rotate-ccw"></svg></button>
-    <button aria-label="Forward"><svg class="icon icon-sm" data-lucide="fast-forward"></svg></button>
+    <button aria-label="Stop" class="primary" id="trailer-btn-stop"><svg class="icon" data-lucide="square"></svg></button>
+    <button aria-label="Replay" id="trailer-btn-replay"><svg class="icon icon-sm" data-lucide="rotate-ccw"></svg></button>
+    <button aria-label="Forward 10s" id="trailer-btn-forward"><svg class="icon icon-sm" data-lucide="fast-forward"></svg></button>
   </div>
 </div>
 <button class="trailer-bubble" id="trailer-bubble" aria-label="Restore trailer">
