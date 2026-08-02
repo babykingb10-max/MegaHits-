@@ -726,13 +726,46 @@ async function renderMoviesPage() {
 }
 
 /* ---- Floating trailer/media window: shared by movies, anime, games ---- */
+let ytPlayer = null;
+let ytApiPromise = null;
+function loadYouTubeAPI() {
+  if (window.YT && window.YT.Player) return Promise.resolve();
+  if (ytApiPromise) return ytApiPromise;
+  ytApiPromise = new Promise((resolve) => {
+    window.onYouTubeIframeAPIReady = resolve;
+    const tag = document.createElement('script');
+    tag.src = 'https://www.youtube.com/iframe_api';
+    document.head.appendChild(tag);
+  });
+  return ytApiPromise;
+}
+function setDecoPlayIcon(isPlaying) {
+  const btn = document.getElementById('trailer-deco-play');
+  btn?.querySelector('svg')?.setAttribute('data-lucide', isPlaying ? 'pause' : 'play');
+  refreshIcons();
+}
 function openMediaWindow({ title, type, src }) {
   document.getElementById('trailer-window-title').textContent = title || 'Trailer';
   const body = document.getElementById('trailer-window-body');
+  ytPlayer = null;
+  setDecoPlayIcon(false);
+
   if (type === 'youtube' && src) {
-    body.innerHTML = `<iframe src="https://www.youtube.com/embed/${src}?autoplay=1" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+    body.innerHTML = `<div id="yt-player-instance" style="position:absolute;inset:0;width:100%;height:100%;"></div>`;
+    loadYouTubeAPI().then(() => {
+      ytPlayer = new YT.Player('yt-player-instance', {
+        videoId: src,
+        playerVars: { autoplay: 1, playsinline: 1, rel: 0 },
+        events: {
+          onStateChange: (e) => setDecoPlayIcon(e.data === YT.PlayerState.PLAYING),
+        },
+      });
+    });
   } else if (type === 'video' && src) {
-    body.innerHTML = `<video src="${src}" controls autoplay playsinline></video>`;
+    body.innerHTML = `<video id="trailer-video-el" src="${src}" autoplay playsinline></video>`;
+    const v = document.getElementById('trailer-video-el');
+    v.addEventListener('play', () => setDecoPlayIcon(true));
+    v.addEventListener('pause', () => setDecoPlayIcon(false));
   } else {
     body.innerHTML = `<div class="trailer-window-empty">No trailer is available for "${title}" yet.</div>`;
   }
@@ -740,12 +773,22 @@ function openMediaWindow({ title, type, src }) {
   win.classList.remove('hidden');
   document.getElementById('trailer-bubble').classList.remove('active');
 }
+function stopActiveMedia() {
+  if (ytPlayer?.stopVideo) { try { ytPlayer.stopVideo(); } catch (e) { /* player not ready yet */ } }
+  const v = document.getElementById('trailer-video-el');
+  if (v) { v.pause(); v.currentTime = 0; }
+}
 function closeMediaWindow() {
+  stopActiveMedia();
+  ytPlayer = null;
   const win = document.getElementById('trailer-window');
   win.classList.add('hidden');
   win.classList.remove('maximized');
+  win.style.left = ''; win.style.top = ''; win.style.right = ''; win.style.bottom = '';
   document.getElementById('trailer-window-body').innerHTML = '';
   document.getElementById('trailer-bubble').classList.remove('active');
+  document.getElementById('trailer-maximize-btn')?.querySelector('svg')?.setAttribute('data-lucide', 'maximize-2');
+  refreshIcons();
 }
 
 async function openTrailer(item) {
@@ -786,16 +829,37 @@ function initTrailerWindow() {
     const nowMaximized = win.classList.toggle('maximized');
     e.currentTarget.querySelector('svg').setAttribute('data-lucide', nowMaximized ? 'minimize-2' : 'maximize-2');
     refreshIcons();
-    if (nowMaximized) { win.style.left = ''; win.style.top = ''; }
+    // Inline positions set while dragging (left/top/right/bottom) have higher
+    // CSS specificity than the .maximized class rules, so they must be
+    // cleared here or the window stays pinned wherever it was last dragged.
+    win.style.left = ''; win.style.top = ''; win.style.right = ''; win.style.bottom = '';
   });
 
-  // Decorative transport controls — visual feedback only, no real video control.
-  const decoPlay = document.getElementById('trailer-deco-play');
-  decoPlay.addEventListener('click', () => {
-    const playing = decoPlay.dataset.playing === '1';
-    decoPlay.querySelector('svg').setAttribute('data-lucide', playing ? 'play' : 'pause');
-    decoPlay.dataset.playing = playing ? '0' : '1';
-    refreshIcons();
+  // Real transport controls: drive the YouTube IFrame API player or the <video> element.
+  document.getElementById('trailer-deco-play').addEventListener('click', () => {
+    if (ytPlayer?.getPlayerState) {
+      const playing = ytPlayer.getPlayerState() === YT.PlayerState.PLAYING;
+      playing ? ytPlayer.pauseVideo() : ytPlayer.playVideo();
+      return;
+    }
+    const v = document.getElementById('trailer-video-el');
+    if (v) v.paused ? v.play() : v.pause();
+  });
+  document.getElementById('trailer-btn-stop').addEventListener('click', stopActiveMedia);
+  document.getElementById('trailer-btn-replay').addEventListener('click', () => {
+    if (ytPlayer?.seekTo) { ytPlayer.seekTo(0, true); ytPlayer.playVideo(); return; }
+    const v = document.getElementById('trailer-video-el');
+    if (v) { v.currentTime = 0; v.play(); }
+  });
+  document.getElementById('trailer-btn-rewind').addEventListener('click', () => {
+    if (ytPlayer?.getCurrentTime) { ytPlayer.seekTo(Math.max(0, ytPlayer.getCurrentTime() - 10), true); return; }
+    const v = document.getElementById('trailer-video-el');
+    if (v) v.currentTime = Math.max(0, v.currentTime - 10);
+  });
+  document.getElementById('trailer-btn-forward').addEventListener('click', () => {
+    if (ytPlayer?.getCurrentTime) { ytPlayer.seekTo(ytPlayer.getCurrentTime() + 10, true); return; }
+    const v = document.getElementById('trailer-video-el');
+    if (v) v.currentTime = v.currentTime + 10;
   });
 
   // Drag (mouse + touch) — disabled while maximized
