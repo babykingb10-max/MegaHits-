@@ -4,6 +4,26 @@ const { cacheMiddleware } = require('../middleware/cache');
 
 const router = express.Router();
 
+// GET /api/music/genres
+router.get('/genres', cacheMiddleware(86400), async (req, res, next) => {
+  try {
+    const { data } = await axios.get('https://api.deezer.com/editorial');
+    res.json((data.data || []).filter((g) => g.id !== 0)); // id 0 = "All", duplicates the main chart
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/music/genre/:id -- top tracks for a specific genre
+router.get('/genre/:id', cacheMiddleware(3600), async (req, res, next) => {
+  try {
+    const { data } = await axios.get(`https://api.deezer.com/editorial/${req.params.id}/charts`);
+    res.json(data.tracks?.data || []);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/music/top50
 // Uses Deezer's public chart endpoint — no API key required, and unlike
 // Spotify's official playlists, Deezer's chart data isn't restricted for
