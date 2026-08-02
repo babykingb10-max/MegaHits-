@@ -18,6 +18,11 @@ function refreshIcons() {
 function loadingHTML(message = 'Loading…') {
   return `<div class="loading-inline"><span class="spinner-sm"></span> ${message}</div>`;
 }
+function extractArray(catId, data) {
+  if (Array.isArray(data)) return data;
+  if (catId === 'travel' && Array.isArray(data?.events)) return data.events;
+  return null;
+}
 function hidePreloader() {
   const el = document.getElementById('preloader');
   if (el) el.classList.add('hidden');
@@ -507,7 +512,8 @@ async function buildHomePreview() {
 
     const normalizer = NORMALIZERS[cat.id];
     let items = null;
-    if (ok && Array.isArray(data)) items = data.map(normalizer);
+    const arr = extractArray(cat.id, data);
+    if (ok && arr) items = arr.map(normalizer);
     if (items === null) items = SAMPLE[cat.id] || [];
     state.categoryItems[cat.id] = items;
 
@@ -531,16 +537,66 @@ async function renderCategoryPage(cat) {
   if (cat.id === 'sports') return renderSportsPage();
   if (cat.id === 'finance') return renderFinancePage();
   if (cat.id === 'movies') return renderMoviesPage();
+  if (cat.id === 'music') return renderMusicPage();
   if (cat.id === 'recipes') return renderRecipesPage();
   if (cat.id === 'news') return renderNewsPage();
   return renderGenericSearchPage(cat);
 }
 
-// Generic search + grid, used by anime, music, gaming, books, travel
+// ---- Music page: genre chips (Afrobeats, Hip-Hop, Gospel-adjacent, etc.) + search ----
+async function renderMusicPage() {
+  const cat = CATEGORIES.find((c) => c.id === 'music');
+  const toolbar = document.getElementById('category-page-toolbar');
+  const extra = document.getElementById('category-page-extra');
+  toolbar.innerHTML = `<div class="toolbar-search"><svg class="icon icon-sm" data-lucide="search"></svg><input type="text" id="music-search-input" placeholder="Search tracks, artists, albums…" /></div>`;
+  refreshIcons();
+
+  let debounceTimer = null;
+  document.getElementById('music-search-input').addEventListener('input', (e) => {
+    clearTimeout(debounceTimer);
+    const q = e.target.value.trim();
+    debounceTimer = setTimeout(async () => {
+      if (!q) { renderFullGrid(cat, state.categoryItems.music || []); return; }
+      document.getElementById('category-page-grid').innerHTML = loadingHTML('Searching…');
+      const { ok, data } = await fetchAPI(`/music?q=${encodeURIComponent(q)}`);
+      renderFullGrid(cat, ok && Array.isArray(data) ? data.map(NORMALIZERS.music) : []);
+    }, 400);
+  });
+
+  const { ok: genresOk, data: genres } = await fetchAPI('/music/genres');
+  if (genresOk && Array.isArray(genres) && genres.length) {
+    extra.innerHTML = `<div class="chip-row" id="music-genre-chips">
+      <button class="filter-chip active" data-genre="">Trending</button>
+      ${genres.slice(0, 14).map((g) => `<button class="filter-chip" data-genre="${g.id}">${g.name}</button>`).join('')}
+    </div>`;
+    extra.querySelectorAll('.filter-chip').forEach((chip) => {
+      chip.addEventListener('click', async () => {
+        extra.querySelectorAll('.filter-chip').forEach((c) => c.classList.remove('active'));
+        chip.classList.add('active');
+        const genreId = chip.dataset.genre;
+        document.getElementById('category-page-grid').innerHTML = loadingHTML();
+        const path = genreId ? `/music/genre/${genreId}` : '/music/top50';
+        const { ok, data } = await fetchAPI(path);
+        const items = ok && Array.isArray(data) ? data.map(NORMALIZERS.music) : (state.categoryItems.music || []);
+        renderFullGrid(cat, items);
+      });
+    });
+  }
+
+  let items = state.categoryItems.music;
+  if (!items) {
+    const { ok, data } = await fetchAPI('/music/top50');
+    items = ok && Array.isArray(data) ? data.map(NORMALIZERS.music) : (SAMPLE.music || []);
+    state.categoryItems.music = items;
+  }
+  renderFullGrid(cat, items);
+}
+
+// Generic search + grid, used by anime, gaming, books, travel
 async function renderGenericSearchPage(cat) {
   const toolbar = document.getElementById('category-page-toolbar');
   const grid = document.getElementById('category-page-grid');
-  const searchable = ['anime', 'music', 'gaming', 'books'].includes(cat.id);
+  const searchable = ['anime', 'gaming', 'books'].includes(cat.id);
 
   if (searchable) {
     toolbar.innerHTML = `<div class="toolbar-search"><svg class="icon icon-sm" data-lucide="search"></svg><input type="text" id="cat-search-input" placeholder="Search ${cat.name.toLowerCase()}…" /></div>`;
@@ -557,7 +613,8 @@ async function renderGenericSearchPage(cat) {
   if (!items) {
     const endpoint = await buildEndpoint(cat.id);
     const { ok, data } = await fetchAPI(endpoint);
-    items = ok && Array.isArray(data) ? data.map(NORMALIZERS[cat.id]) : (SAMPLE[cat.id] || []);
+    const arr = extractArray(cat.id, data);
+    items = ok && arr ? arr.map(NORMALIZERS[cat.id]) : (SAMPLE[cat.id] || []);
     state.categoryItems[cat.id] = items;
   }
   renderFullGrid(cat, items);
@@ -607,25 +664,48 @@ async function renderMoviesPage() {
   });
 
   const { ok: genresOk, data: genres } = await fetchAPI('/movies/genres');
-  if (genresOk && Array.isArray(genres)) {
-    extra.innerHTML = `<div class="chip-row" id="genre-chips">
+  extra.innerHTML = `
+    <div class="chip-row" id="type-tabs">
+      <button class="filter-chip active" data-type="movies">Movies</button>
+      <button class="filter-chip" data-type="series">Series</button>
+    </div>
+    ${genresOk && Array.isArray(genres) ? `<div class="chip-row" id="genre-chips">
       <button class="filter-chip active" data-genre="">Trending</button>
       ${genres.slice(0, 10).map((g) => `<button class="filter-chip" data-genre="${g.id}">${g.name}</button>`).join('')}
-    </div>`;
-    extra.querySelectorAll('.filter-chip').forEach((chip) => {
-      chip.addEventListener('click', async () => {
-        extra.querySelectorAll('.filter-chip').forEach((c) => c.classList.remove('active'));
-        chip.classList.add('active');
-        const genreId = chip.dataset.genre;
-        const grid = document.getElementById('category-page-grid');
-        grid.innerHTML = loadingHTML();
-        const path = genreId ? `/movies/discover?genre=${genreId}` : '/movies/trending';
-        const { ok, data } = await fetchAPI(path);
-        const items = ok && Array.isArray(data) ? data.map(NORMALIZERS.movies) : (state.categoryItems.movies || []);
-        renderFullGrid(cat, items);
-      });
+    </div>` : ''}
+  `;
+  refreshIcons();
+
+  extra.querySelectorAll('#type-tabs .filter-chip').forEach((tab) => {
+    tab.addEventListener('click', async () => {
+      extra.querySelectorAll('#type-tabs .filter-chip').forEach((t) => t.classList.remove('active'));
+      tab.classList.add('active');
+      const genreChips = document.getElementById('genre-chips');
+      document.getElementById('category-page-grid').innerHTML = loadingHTML();
+      if (tab.dataset.type === 'series') {
+        if (genreChips) genreChips.style.display = 'none';
+        const { ok, data } = await fetchAPI('/movies/tv/trending');
+        renderFullGrid(cat, ok && Array.isArray(data) ? data.map(NORMALIZERS.movies) : []);
+      } else {
+        if (genreChips) genreChips.style.display = '';
+        renderFullGrid(cat, state.categoryItems.movies || []);
+      }
     });
-  }
+  });
+
+  extra.querySelectorAll('#genre-chips .filter-chip').forEach((chip) => {
+    chip.addEventListener('click', async () => {
+      extra.querySelectorAll('#genre-chips .filter-chip').forEach((c) => c.classList.remove('active'));
+      chip.classList.add('active');
+      const genreId = chip.dataset.genre;
+      const grid = document.getElementById('category-page-grid');
+      grid.innerHTML = loadingHTML();
+      const path = genreId ? `/movies/discover?genre=${genreId}` : '/movies/trending';
+      const { ok, data } = await fetchAPI(path);
+      const items = ok && Array.isArray(data) ? data.map(NORMALIZERS.movies) : (state.categoryItems.movies || []);
+      renderFullGrid(cat, items);
+    });
+  });
 
   let items = state.categoryItems.movies;
   if (!items) {
@@ -783,6 +863,9 @@ async function renderSportsPage() {
   const cat = CATEGORIES.find((c) => c.id === 'sports');
   const extra = document.getElementById('category-page-extra');
   extra.innerHTML = `
+    <div class="toolbar-search"><svg class="icon icon-sm" data-lucide="search"></svg><input type="text" id="player-search-input" placeholder="Search players…" /></div>
+    <div id="player-search-results"></div>
+
     <h4 style="font-size:0.9rem; margin-bottom:10px;">Live right now</h4>
     <div class="grid" id="live-matches-grid" style="margin-bottom:24px;">${loadingHTML()}</div>
     <h4 style="font-size:0.9rem; margin-bottom:10px;">League standings</h4>
@@ -792,6 +875,41 @@ async function renderSportsPage() {
     <div id="standings-container"><div class="card-sub">Select a league to see standings.</div></div>
   `;
   document.getElementById('category-page-grid').innerHTML = '';
+  refreshIcons();
+
+  let playerDebounce = null;
+  document.getElementById('player-search-input').addEventListener('input', (e) => {
+    clearTimeout(playerDebounce);
+    const q = e.target.value.trim();
+    const resultsEl = document.getElementById('player-search-results');
+    if (!q || q.length < 3) { resultsEl.innerHTML = q ? emptyStateHTML('Keep typing (min 3 letters)…') : ''; return; }
+    resultsEl.innerHTML = loadingHTML('Searching players…');
+    playerDebounce = setTimeout(async () => {
+      const { ok, data } = await fetchAPI(`/sports/players?search=${encodeURIComponent(q)}`);
+      const players = ok && Array.isArray(data) ? data : [];
+      if (!players.length) { resultsEl.innerHTML = emptyStateHTML(`No players found for "${q}" — the free plan often needs an exact league too.`); return; }
+      resultsEl.innerHTML = players.slice(0, 6).map((p) => `
+        <div class="city-result-item" data-idx="${players.indexOf(p)}" style="cursor:pointer;">
+          ${p.player.photo ? `<img src="${p.player.photo}" alt="" style="width:32px;height:32px;border-radius:50%;object-fit:cover;" />` : `<svg class="icon icon-sm" data-lucide="user"></svg>`}
+          <div><div>${p.player.name}</div><div class="search-result-category">${p.statistics?.[0]?.team?.name || p.player.nationality || ''}</div></div>
+        </div>
+      `).join('');
+      refreshIcons();
+      resultsEl.querySelectorAll('[data-idx]').forEach((el) => {
+        el.addEventListener('click', () => {
+          const p = players[+el.dataset.idx];
+          showMediaDetail({
+            title: p.player.name,
+            image: p.player.photo,
+            sub: `${p.player.nationality || ''}${p.player.age ? ' · Age ' + p.player.age : ''}`,
+            description: p.statistics?.[0]
+              ? `Team: ${p.statistics[0].team?.name || '—'}\nPosition: ${p.statistics[0].games?.position || '—'}\nAppearances: ${p.statistics[0].games?.appearences ?? '—'}\nGoals: ${p.statistics[0].goals?.total ?? '—'}`
+              : 'No statistics available.',
+          });
+        });
+      });
+    }, 500);
+  });
 
   const { ok, data } = await fetchAPI('/sports/live');
   const matches = ok && Array.isArray(data) ? data.map(normalizeMatch) : null;
@@ -811,11 +929,13 @@ async function renderSportsPage() {
   async function loadStandings(leagueId) {
     const container = document.getElementById('standings-container');
     container.innerHTML = loadingHTML('Loading standings…');
-    const season = new Date().getFullYear();
-    const { ok, data } = await fetchAPI(`/sports/standings?league=${leagueId}&season=${season}`);
-    const table = ok && data?.[0]?.league?.standings?.[0];
+    const { ok, data } = await fetchAPI(`/sports/standings?league=${leagueId}&season=${new Date().getFullYear()}`);
+    const table = ok && data?.response?.[0]?.league?.standings?.[0];
     if (!table) { container.innerHTML = emptyStateHTML('Standings unavailable for this league right now.'); return; }
+    const seasonNote = data.season && data.season !== new Date().getFullYear()
+      ? `<div class="card-sub" style="margin-bottom:8px;">Showing ${data.season} season (latest available)</div>` : '';
     container.innerHTML = `
+      ${seasonNote}
       <table class="standings-table">
         <thead><tr><th>#</th><th>Team</th><th>P</th><th>W</th><th>D</th><th>L</th><th>Pts</th></tr></thead>
         <tbody>${table.map((row) => `
@@ -1234,4 +1354,3 @@ function init() {
 
 document.addEventListener('DOMContentLoaded', init);
 window.addEventListener('load', () => setTimeout(hidePreloader, 4000)); // failsafe in case init() errors early
-
