@@ -946,8 +946,82 @@ input, select { font-family: inherit; }
    .search-toggle-btn rules above. */
 
 /* ============================================================
-   PRELOADER — full-screen splash on first load, matches brand mark
+   FLOATING TRAILER WINDOW — draggable, minimize/maximize, decorative controls
    ============================================================ */
+.trailer-window {
+  position: fixed;
+  top: 90px;
+  right: 20px;
+  width: 340px;
+  max-width: calc(100vw - 32px);
+  display: flex;
+  flex-direction: column;
+  background: rgba(20, 20, 25, 0.98);
+  border: 1px solid rgba(255, 0, 85, 0.35);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 22px 48px rgba(0, 0, 0, 0.55);
+  z-index: 9998;
+  overflow: hidden;
+}
+.trailer-window.hidden { display: none; }
+.trailer-window.maximized {
+  top: 12px; left: 12px; right: 12px; bottom: 12px;
+  width: auto; max-width: none;
+}
+.trailer-window-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 10px 10px 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--border-color);
+  cursor: grab;
+  touch-action: none;
+  flex-shrink: 0;
+}
+.trailer-window-header.dragging { cursor: grabbing; }
+.trailer-window-title-text {
+  flex: 1; font-size: 0.82rem; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  pointer-events: none;
+}
+.trailer-window-actions { display: flex; gap: 2px; }
+.trailer-window-actions button {
+  width: 28px; height: 28px; display: grid; place-items: center;
+  border-radius: 6px; color: var(--text-secondary);
+}
+.trailer-window-actions button:hover { background: rgba(255, 255, 255, 0.08); color: var(--text-primary); }
+
+.trailer-window-body { position: relative; aspect-ratio: 16 / 9; background: #000; flex-shrink: 0; }
+.trailer-window.maximized .trailer-window-body { aspect-ratio: unset; flex: 1; }
+.trailer-window-body iframe,
+.trailer-window-body video { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.trailer-window-empty {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  padding: 20px; text-align: center; font-size: 0.85rem; color: var(--text-secondary);
+}
+
+.trailer-window-controls {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 10px; background: rgba(255, 255, 255, 0.02); flex-shrink: 0;
+}
+.trailer-window-controls button {
+  width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+  background: rgba(255, 255, 255, 0.06); color: var(--text-secondary);
+  transition: background 0.15s var(--ease), color 0.15s var(--ease);
+}
+.trailer-window-controls button:hover { background: var(--accent-dim); color: var(--accent); }
+.trailer-window-controls button.primary { background: var(--accent); color: #fff; width: 40px; height: 40px; }
+.trailer-window-controls button.primary:hover { filter: brightness(1.1); }
+
+.trailer-bubble {
+  position: fixed; bottom: 88px; right: 20px;
+  width: 52px; height: 52px; border-radius: 50%;
+  background: var(--card-bg-solid); border: 2px solid var(--accent);
+  display: none; align-items: center; justify-content: center;
+  color: var(--accent);
+  z-index: 9998;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
+}
+.trailer-bubble.active { display: flex; }
 #preloader {
   position: fixed;
   inset: 0;
@@ -1173,4 +1247,3 @@ html[data-theme="light"] .audio-player { background: rgba(255, 255, 255, 0.98); 
 .install-banner.active { display: flex; }
 .install-banner-text { flex: 1; font-size: 0.8rem; }
 .install-banner-text strong { display: block; font-size: 0.85rem; margin-bottom: 2px; }
-
