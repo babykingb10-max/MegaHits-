@@ -1014,14 +1014,19 @@ input, select { font-family: inherit; }
 
 .trailer-bubble {
   position: fixed; bottom: 88px; right: 20px;
-  width: 52px; height: 52px; border-radius: 50%;
+  width: 60px; height: 60px; border-radius: 50%;
   background: var(--card-bg-solid); border: 2px solid var(--accent);
   display: none; align-items: center; justify-content: center;
   color: var(--accent);
   z-index: 9998;
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.5);
 }
+.trailer-bubble .icon { width: 26px; height: 26px; }
 .trailer-bubble.active { display: flex; }
+@media (min-width: 900px) {
+  .trailer-bubble { width: 72px; height: 72px; bottom: 104px; }
+  .trailer-bubble .icon { width: 30px; height: 30px; }
+}
 #preloader {
   position: fixed;
   inset: 0;
