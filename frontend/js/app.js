@@ -51,6 +51,17 @@ const LEAGUES = [
   { id: 2, name: 'Champions League' },
 ];
 const NEWS_CATEGORIES = ['general', 'technology', 'business', 'sports', 'entertainment', 'science'];
+// name -> used as API-Football's ?country= param; code -> used as Apple's storefront code for music charts
+const COUNTRIES = [
+  { name: 'Tanzania', code: 'tz' }, { name: 'Kenya', code: 'ke' }, { name: 'Uganda', code: 'ug' },
+  { name: 'Rwanda', code: 'rw' }, { name: 'Nigeria', code: 'ng' }, { name: 'Ghana', code: 'gh' },
+  { name: 'South Africa', code: 'za' }, { name: 'Zambia', code: 'zm' }, { name: 'Egypt', code: 'eg' },
+  { name: 'Morocco', code: 'ma' }, { name: 'United States', code: 'us' }, { name: 'United Kingdom', code: 'gb' },
+  { name: 'France', code: 'fr' }, { name: 'Germany', code: 'de' }, { name: 'Spain', code: 'es' },
+  { name: 'Italy', code: 'it' }, { name: 'Brazil', code: 'br' }, { name: 'India', code: 'in' },
+  { name: 'Japan', code: 'jp' }, { name: 'Mexico', code: 'mx' }, { name: 'Canada', code: 'ca' },
+  { name: 'Australia', code: 'au' }, { name: 'Saudi Arabia', code: 'sa' }, { name: 'United Arab Emirates', code: 'ae' },
+];
 
 /* ---------- 2. OFFLINE FALLBACK DATA (only used if a request fails) ---------- */
 const SAMPLE = {
@@ -573,24 +584,55 @@ async function renderMusicPage() {
   });
 
   const { ok: genresOk, data: genres } = await fetchAPI('/music/genres');
-  if (genresOk && Array.isArray(genres) && genres.length) {
-    extra.innerHTML = `<div class="chip-row" id="music-genre-chips">
+  extra.innerHTML = `
+    <div class="chip-row" style="margin-bottom:6px;">
+      <select class="select-input" id="music-country-select" style="max-width:220px;">
+        <option value="">🌐 Global chart</option>
+        ${COUNTRIES.map((c) => `<option value="${c.code}">${c.name}</option>`).join('')}
+      </select>
+    </div>
+    ${genresOk && Array.isArray(genres) && genres.length ? `<div class="chip-row" id="music-genre-chips">
       <button class="filter-chip active" data-genre="">Trending</button>
       ${genres.slice(0, 14).map((g) => `<button class="filter-chip" data-genre="${g.id}">${g.name}</button>`).join('')}
-    </div>`;
-    extra.querySelectorAll('.filter-chip').forEach((chip) => {
-      chip.addEventListener('click', async () => {
-        extra.querySelectorAll('.filter-chip').forEach((c) => c.classList.remove('active'));
-        chip.classList.add('active');
-        const genreId = chip.dataset.genre;
-        document.getElementById('category-page-grid').innerHTML = loadingHTML();
-        const path = genreId ? `/music/genre/${genreId}` : '/music/top50';
-        const { ok, data } = await fetchAPI(path);
-        const items = ok && Array.isArray(data) ? data.map(NORMALIZERS.music) : (state.categoryItems.music || []);
-        renderFullGrid(cat, items);
-      });
-    });
+    </div>` : ''}
+  `;
+  refreshIcons();
+
+  function normalizeAppleTrack(raw) {
+    return {
+      title: raw.name,
+      sub: raw.artistName,
+      image: raw.artworkUrl100 ? raw.artworkUrl100.replace('100x100', '400x400') : null,
+      preview: null,
+      url: raw.url,
+      description: `${raw.name} — ${raw.artistName}`,
+    };
   }
+
+  document.getElementById('music-country-select').addEventListener('change', async (e) => {
+    const code = e.target.value;
+    document.getElementById('music-genre-chips')?.querySelectorAll('.filter-chip').forEach((c) => c.classList.remove('active'));
+    document.getElementById('category-page-grid').innerHTML = loadingHTML();
+    if (!code) { renderFullGrid(cat, state.categoryItems.music || []); return; }
+    const { ok, data } = await fetchAPI(`/music/country/${code}`);
+    const items = ok && Array.isArray(data) ? data.map(normalizeAppleTrack) : [];
+    if (!items.length) { document.getElementById('category-page-grid').innerHTML = emptyStateHTML('No chart available for this country right now.'); return; }
+    renderFullGrid(cat, items);
+  });
+
+  extra.querySelectorAll('#music-genre-chips .filter-chip').forEach((chip) => {
+    chip.addEventListener('click', async () => {
+      extra.querySelectorAll('#music-genre-chips .filter-chip').forEach((c) => c.classList.remove('active'));
+      chip.classList.add('active');
+      document.getElementById('music-country-select').value = '';
+      const genreId = chip.dataset.genre;
+      document.getElementById('category-page-grid').innerHTML = loadingHTML();
+      const path = genreId ? `/music/genre/${genreId}` : '/music/top50';
+      const { ok, data } = await fetchAPI(path);
+      const items = ok && Array.isArray(data) ? data.map(NORMALIZERS.music) : (state.categoryItems.music || []);
+      renderFullGrid(cat, items);
+    });
+  });
 
   let items = state.categoryItems.music;
   if (!items) {
@@ -1027,6 +1069,10 @@ async function renderSportsPage() {
     <div class="grid" id="live-matches-grid" style="margin-bottom:24px;">${loadingHTML()}</div>
     <h4 style="font-size:0.9rem; margin-bottom:10px;">League standings</h4>
     <div class="league-select-row">
+      <select class="select-input" id="country-select" style="max-width:180px;">
+        <option value="">🌍 Popular leagues</option>
+        ${COUNTRIES.map((c) => `<option value="${c.name}">${c.name}</option>`).join('')}
+      </select>
       <select class="select-input" id="league-select" style="max-width:220px;">${LEAGUES.map((l) => `<option value="${l.id}">${l.name}</option>`).join('')}</select>
     </div>
     <div id="standings-container"><div class="card-sub">Select a league to see standings.</div></div>
@@ -1107,6 +1153,25 @@ async function renderSportsPage() {
     `;
   }
   document.getElementById('league-select').addEventListener('change', (e) => loadStandings(e.target.value));
+  document.getElementById('country-select').addEventListener('change', async (e) => {
+    const leagueSelect = document.getElementById('league-select');
+    const country = e.target.value;
+    if (!country) {
+      leagueSelect.innerHTML = LEAGUES.map((l) => `<option value="${l.id}">${l.name}</option>`).join('');
+      loadStandings(LEAGUES[0].id);
+      return;
+    }
+    leagueSelect.innerHTML = `<option>Loading…</option>`;
+    const { ok, data } = await fetchAPI(`/sports/leagues?country=${encodeURIComponent(country)}`);
+    const leagues = ok && Array.isArray(data) ? data.filter((l) => l.type === 'League') : [];
+    if (!leagues.length) {
+      leagueSelect.innerHTML = `<option value="">No leagues found</option>`;
+      document.getElementById('standings-container').innerHTML = emptyStateHTML(`No leagues found for ${country}.`);
+      return;
+    }
+    leagueSelect.innerHTML = leagues.map((l) => `<option value="${l.id}">${l.name}</option>`).join('');
+    loadStandings(leagues[0].id);
+  });
   loadStandings(LEAGUES[0].id);
 }
 
@@ -1164,7 +1229,11 @@ function showMediaDetail(item) {
 
 /* ---------- 14. DRAGGABLE FLOATING AUDIO PLAYER — real Deezer preview playback ---------- */
 function playTrack(track) {
-  if (!track?.preview) { showToast('No audio preview available for this track.', 'error'); return; }
+  if (!track?.preview) {
+    if (track?.url) { window.open(track.url, '_blank', 'noopener'); showToast('No in-app preview — opened in Apple Music instead.', 'info'); }
+    else showToast('No audio preview available for this track.', 'error');
+    return;
+  }
   const player = document.getElementById('audio-player');
   document.getElementById('player-track').textContent = track.title;
   document.getElementById('player-artist').textContent = track.sub;
