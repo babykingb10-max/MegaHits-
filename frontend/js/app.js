@@ -15,6 +15,22 @@ function refreshIcons() {
     try { lucide.createIcons(); } catch (e) { /* non-fatal */ }
   }
 }
+function siteNameFromUrl(url) {
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return 'an external site'; }
+}
+function confirmExternalOpen(url, siteName) {
+  if (!url) return;
+  const name = siteName || siteNameFromUrl(url);
+  document.getElementById('external-link-message').textContent = `This will open ${name} in a new tab — you'll be leaving MegaHits Vibez.`;
+  const oldBtn = document.getElementById('external-link-confirm-btn');
+  const newBtn = oldBtn.cloneNode(true); // drop any previously-attached listener before adding a fresh one
+  oldBtn.parentNode.replaceChild(newBtn, oldBtn);
+  newBtn.addEventListener('click', () => {
+    window.open(url, '_blank', 'noopener');
+    closeModal('external-link-modal');
+  });
+  openModal('external-link-modal');
+}
 function loadingHTML(message = 'Loading…') {
   return `<div class="loading-inline"><span class="spinner-sm"></span> ${message}</div>`;
 }
@@ -176,9 +192,13 @@ const NORMALIZERS = {
   recipes: (raw) => ({
     id: raw.id,
     title: raw.title || 'Untitled recipe',
-    sub: `Uses ${raw.usedIngredientCount ?? 0} of your ingredients${raw.missedIngredientCount ? `, needs ${raw.missedIngredientCount} more` : ''}`,
+    sub: raw.usedIngredientCount != null
+      ? `Uses ${raw.usedIngredientCount} of your ingredients${raw.missedIngredientCount ? `, needs ${raw.missedIngredientCount} more` : ''}`
+      : 'Tap Steps for the full recipe',
     image: raw.image || null,
-    description: `You have ${raw.usedIngredientCount ?? 0} of the ingredients for this recipe; missing ${raw.missedIngredientCount ?? 0}.`,
+    description: raw.usedIngredientCount != null
+      ? `You have ${raw.usedIngredientCount} of the ingredients for this recipe; missing ${raw.missedIngredientCount ?? 0}.`
+      : raw.title || '',
     isRecipe: true,
   }),
   news: (raw) => ({
@@ -474,7 +494,7 @@ function wireGenericCardButtons(container, cat, items) {
       else if (cat.id === 'anime') openAnimeTrailer(item);
       else if (cat.id === 'gaming') openGameTrailer(item);
       else if (cat.id === 'recipes' && item.id) openRecipeDetail(item);
-      else if (item.url) window.open(item.url, '_blank', 'noopener');
+      else if (item.url) confirmExternalOpen(item.url);
       else showMediaDetail(item);
     });
   });
@@ -932,14 +952,23 @@ function initTrailerWindow() {
 async function renderRecipesPage() {
   const cat = CATEGORIES.find((c) => c.id === 'recipes');
   const toolbar = document.getElementById('category-page-toolbar');
+  const extra = document.getElementById('category-page-extra');
+  const CUISINES = ['African', 'Italian', 'Chinese', 'Indian', 'Mexican', 'French', 'Japanese', 'Mediterranean', 'American', 'Thai', 'Caribbean', 'Middle Eastern'];
   toolbar.innerHTML = `<div class="toolbar-search"><svg class="icon icon-sm" data-lucide="search"></svg><input type="text" id="recipe-ing-input" placeholder="Ingredients you have, comma separated…" value="chicken, rice, tomato, onion, garlic" /></div>`;
+  extra.innerHTML = `<div class="chip-row" id="cuisine-chips">
+    <button class="filter-chip active" data-cuisine="">By ingredients</button>
+    ${CUISINES.map((c) => `<button class="filter-chip" data-cuisine="${c}">${c}</button>`).join('')}
+  </div>`;
   refreshIcons();
+
   let debounceTimer = null;
   document.getElementById('recipe-ing-input').addEventListener('input', (e) => {
     clearTimeout(debounceTimer);
     const q = e.target.value.trim();
     debounceTimer = setTimeout(async () => {
       if (!q) return;
+      extra.querySelectorAll('.filter-chip').forEach((c) => c.classList.remove('active'));
+      extra.querySelector('[data-cuisine=""]').classList.add('active');
       const grid = document.getElementById('category-page-grid');
       grid.innerHTML = loadingHTML('Searching…');
       const { ok, data } = await fetchAPI(`/recipes?ingredients=${encodeURIComponent(q)}`);
@@ -947,6 +976,21 @@ async function renderRecipesPage() {
       state.categoryItems.recipes = items;
       renderFullGrid(cat, items);
     }, 500);
+  });
+
+  extra.querySelectorAll('#cuisine-chips .filter-chip').forEach((chip) => {
+    chip.addEventListener('click', async () => {
+      extra.querySelectorAll('.filter-chip').forEach((c) => c.classList.remove('active'));
+      chip.classList.add('active');
+      const cuisine = chip.dataset.cuisine;
+      const grid = document.getElementById('category-page-grid');
+      if (!cuisine) { renderFullGrid(cat, state.categoryItems.recipes || []); return; }
+      grid.innerHTML = loadingHTML();
+      const { ok, data } = await fetchAPI(`/recipes?cuisine=${encodeURIComponent(cuisine)}`);
+      const items = ok && Array.isArray(data) ? data.map(NORMALIZERS.recipes) : [];
+      if (!items.length) { grid.innerHTML = emptyStateHTML(`No ${cuisine} recipes found right now.`); return; }
+      renderFullGrid(cat, items);
+    });
   });
 
   let items = state.categoryItems.recipes;
@@ -976,19 +1020,34 @@ async function openRecipeDetail(item) {
 async function renderNewsPage() {
   const cat = CATEGORIES.find((c) => c.id === 'news');
   const extra = document.getElementById('category-page-extra');
-  extra.innerHTML = `<div class="chip-row" id="news-chips">${NEWS_CATEGORIES.map((n, i) => `<button class="filter-chip ${i === 0 ? 'active' : ''}" data-news-cat="${n}">${n[0].toUpperCase()}${n.slice(1)}</button>`).join('')}</div>`;
-  extra.querySelectorAll('.filter-chip').forEach((chip) => {
-    chip.addEventListener('click', async () => {
-      extra.querySelectorAll('.filter-chip').forEach((c) => c.classList.remove('active'));
+  extra.innerHTML = `
+    <div class="chip-row" style="margin-bottom:6px;">
+      <select class="select-input" id="news-country-select" style="max-width:220px;">
+        <option value="">🌐 All countries</option>
+        ${COUNTRIES.map((c) => `<option value="${c.code.toUpperCase()}">${c.name}</option>`).join('')}
+      </select>
+    </div>
+    <div class="chip-row" id="news-chips">${NEWS_CATEGORIES.map((n, i) => `<button class="filter-chip ${i === 0 ? 'active' : ''}" data-news-cat="${n}">${n[0].toUpperCase()}${n.slice(1)}</button>`).join('')}</div>
+  `;
+  async function loadNews() {
+    const category = extra.querySelector('.filter-chip.active')?.dataset.newsCat || 'general';
+    const country = document.getElementById('news-country-select').value;
+    document.getElementById('category-page-grid').innerHTML = loadingHTML();
+    const { ok, data } = await fetchAPI(`/news?category=${category}${country ? '&country=' + country : ''}`);
+    const items = ok && Array.isArray(data) ? data.map(NORMALIZERS.news) : [];
+    state.categoryItems.news = items;
+    if (!items.length) { document.getElementById('category-page-grid').innerHTML = emptyStateHTML('No news found for this filter combination — try "All countries".'); return; }
+    renderFullGrid(cat, items);
+  }
+  extra.querySelectorAll('#news-chips .filter-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      extra.querySelectorAll('#news-chips .filter-chip').forEach((c) => c.classList.remove('active'));
       chip.classList.add('active');
-      const grid = document.getElementById('category-page-grid');
-      grid.innerHTML = loadingHTML();
-      const { ok, data } = await fetchAPI(`/news?category=${chip.dataset.newsCat}`);
-      const items = ok && Array.isArray(data) ? data.map(NORMALIZERS.news) : [];
-      state.categoryItems.news = items;
-      renderFullGrid(cat, items);
+      loadNews();
     });
   });
+  document.getElementById('news-country-select').addEventListener('change', loadNews);
+
   let items = state.categoryItems.news;
   if (!items) {
     const { ok, data } = await fetchAPI('/news?category=general');
@@ -1163,13 +1222,18 @@ async function renderSportsPage() {
     }
     leagueSelect.innerHTML = `<option>Loading…</option>`;
     const { ok, data } = await fetchAPI(`/sports/leagues?country=${encodeURIComponent(country)}`);
-    const leagues = ok && Array.isArray(data) ? data.filter((l) => l.type === 'League') : [];
-    if (!leagues.length) {
-      leagueSelect.innerHTML = `<option value="">No leagues found</option>`;
-      document.getElementById('standings-container').innerHTML = emptyStateHTML(`No leagues found for ${country}.`);
+    if (!ok) {
+      leagueSelect.innerHTML = `<option value="">Request failed</option>`;
+      document.getElementById('standings-container').innerHTML = emptyStateHTML(`Could not reach the leagues service for ${country} — check the backend logs / API-Football plan limits.`);
       return;
     }
-    leagueSelect.innerHTML = leagues.map((l) => `<option value="${l.id}">${l.name}</option>`).join('');
+    const leagues = Array.isArray(data) ? data : [];
+    if (!leagues.length) {
+      leagueSelect.innerHTML = `<option value="">No leagues found</option>`;
+      document.getElementById('standings-container').innerHTML = emptyStateHTML(`API-Football has no league data for ${country} on the current plan.`);
+      return;
+    }
+    leagueSelect.innerHTML = leagues.map((l) => `<option value="${l.id}">${l.name}${l.type === 'Cup' ? ' (Cup)' : ''}</option>`).join('');
     loadStandings(leagues[0].id);
   });
   loadStandings(LEAGUES[0].id);
@@ -1216,7 +1280,7 @@ function showMediaDetail(item) {
   if (!item) return;
   document.getElementById('media-modal-title').textContent = item.title || 'Details';
   const img = item.image ? `<img src="${item.image}" alt="${item.title || ''}" style="width:100%;border-radius:var(--radius-md);margin-bottom:16px;max-height:320px;object-fit:cover;" />` : '';
-  const link = item.url ? `<a href="${item.url}" target="_blank" rel="noopener" class="btn btn-primary" style="margin-top:14px;"><svg class="icon icon-sm" data-lucide="external-link"></svg> Open</a>` : '';
+  const link = item.url ? `<button class="btn btn-primary" id="media-modal-open-btn" style="margin-top:14px;"><svg class="icon icon-sm" data-lucide="external-link"></svg> Open</button>` : '';
   document.getElementById('media-modal-body').innerHTML = `
     ${img}
     ${item.sub ? `<div class="card-sub" style="margin-bottom:10px;">${item.sub}</div>` : ''}
@@ -1224,13 +1288,14 @@ function showMediaDetail(item) {
     ${link}
   `;
   refreshIcons();
+  if (item.url) document.getElementById('media-modal-open-btn').addEventListener('click', () => confirmExternalOpen(item.url));
   openModal('media-modal');
 }
 
 /* ---------- 14. DRAGGABLE FLOATING AUDIO PLAYER — real Deezer preview playback ---------- */
 function playTrack(track) {
   if (!track?.preview) {
-    if (track?.url) { window.open(track.url, '_blank', 'noopener'); showToast('No in-app preview — opened in Apple Music instead.', 'info'); }
+    if (track?.url) { confirmExternalOpen(track.url, 'Apple Music'); }
     else showToast('No audio preview available for this track.', 'error');
     return;
   }
