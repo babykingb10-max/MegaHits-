@@ -54,6 +54,25 @@ router.get('/fixture/:id/stats', cacheMiddleware(60), async (req, res, next) => 
   }
 });
 
+// GET /api/sports/leagues?country=Kenya
+router.get('/leagues', cacheMiddleware(86400), async (req, res, next) => {
+  try {
+    const { country } = req.query;
+    if (!country) return res.status(400).json({ error: true, message: 'Missing "country" query param' });
+    const { data } = await apiFootballClient().get('/leagues', { params: { country } });
+    const leagues = (data.response || []).map((item) => ({
+      id: item.league.id,
+      name: item.league.name,
+      type: item.league.type,
+      logo: item.league.logo,
+      season: item.seasons?.find((s) => s.current)?.year || item.seasons?.[item.seasons.length - 1]?.year,
+    }));
+    res.json(leagues);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/sports/players?search=Messi
 router.get('/players', cacheMiddleware(86400), async (req, res, next) => {
   try {
