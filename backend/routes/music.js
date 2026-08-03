@@ -4,6 +4,19 @@ const { cacheMiddleware } = require('../middleware/cache');
 
 const router = express.Router();
 
+// GET /api/music/country/:code -- top songs chart for a country storefront
+// Uses Apple's free public RSS feed generator — no API key required, and it
+// genuinely varies per country (unlike Deezer's public chart, which is global-only).
+router.get('/country/:code', cacheMiddleware(21600), async (req, res, next) => {
+  try {
+    const { code } = req.params;
+    const { data } = await axios.get(`https://rss.applemarketingtools.com/api/v2/${code}/music/most-played/50/songs.json`);
+    res.json(data.feed?.results || []);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/music/genres
 router.get('/genres', cacheMiddleware(86400), async (req, res, next) => {
   try {
