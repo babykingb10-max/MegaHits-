@@ -14,7 +14,10 @@ function apiFootballClient() {
 // GET /api/sports/live -- refresh every 60s on the client
 router.get('/live', cacheMiddleware(60), async (req, res, next) => {
   try {
-    const { data } = await apiFootballClient().get('/fixtures', { params: { live: 'all' } });
+    const { league } = req.query;
+    const params = { live: 'all' };
+    if (league) params.league = league;
+    const { data } = await apiFootballClient().get('/fixtures', { params });
     res.json(data.response);
   } catch (err) {
     next(err);
