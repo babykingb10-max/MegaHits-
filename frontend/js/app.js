@@ -37,6 +37,7 @@ function loadingHTML(message = 'Loading…') {
 function extractArray(catId, data) {
   if (Array.isArray(data)) return data;
   if (catId === 'travel' && Array.isArray(data?.events)) return data.events;
+  if (catId === 'news' && Array.isArray(data?.news)) return data.news;
   return null;
 }
 function hidePreloader() {
@@ -116,14 +117,18 @@ async function fetchJSON(path, fallback) {
     return fallback;
   }
 }
-async function fetchAPI(path) {
+async function fetchAPI(path, timeoutMs = 12000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(`${API_BASE}${path}`);
+    const res = await fetch(`${API_BASE}${path}`, { signal: controller.signal });
     if (!res.ok) return { ok: false, data: null };
     const data = await res.json();
     return { ok: true, data };
   } catch (err) {
     return { ok: false, data: null };
+  } finally {
+    clearTimeout(timer);
   }
 }
 function getUserCoords() {
@@ -502,6 +507,47 @@ function wireGenericCardButtons(container, cat, items) {
 }
 
 /* ---------- 11. HOME VIEW (lite previews) ---------- */
+async function loadCategoryPreview(cat) {
+  const endpoint = await buildEndpoint(cat.id);
+  const container2 = document.getElementById(`preview-${cat.id}`);
+  const { ok, data } = await fetchAPI(endpoint);
+
+  if (cat.id === 'weather') {
+    const w = ok ? normalizeWeather(data) : null;
+    container2.innerHTML = w
+      ? `<article class="card" style="grid-column:span 2;"><div class="weather-temp">${w.temp}°C</div><div class="card-sub">${w.city} · ${w.condition}</div></article>`
+      : emptyStateHTML('Weather unavailable right now.');
+    refreshIcons();
+    return;
+  }
+  if (cat.id === 'sports') {
+    const matches = ok && Array.isArray(data) ? data.map(normalizeMatch) : null;
+    if (!matches || !matches.length) { container2.innerHTML = emptyStateHTML('No live matches right now.'); return; }
+    container2.innerHTML = cardTemplate(cat, matches.slice(0, 3));
+    refreshIcons();
+    return;
+  }
+  if (cat.id === 'finance') {
+    const coins = ok && Array.isArray(data) ? data.map(normalizeCoin) : null;
+    if (!coins) { container2.innerHTML = emptyStateHTML('Crypto prices unavailable.'); return; }
+    container2.innerHTML = cardTemplate(cat, coins.slice(0, 4));
+    refreshIcons();
+    return;
+  }
+
+  const normalizer = NORMALIZERS[cat.id];
+  let items = null;
+  const arr = extractArray(cat.id, data);
+  if (ok && arr) items = arr.map(normalizer);
+  if (items === null) items = SAMPLE[cat.id] || [];
+  state.categoryItems[cat.id] = items;
+
+  if (!items.length) { container2.innerHTML = emptyStateHTML('No results right now.'); return; }
+  container2.innerHTML = cardTemplate(cat, items.slice(0, 4));
+  refreshIcons();
+  wireGenericCardButtons(container2, cat, items.slice(0, 4));
+}
+
 async function buildHomePreview() {
   const container = document.getElementById('home-preview-container');
   container.innerHTML = CATEGORIES.map((c) => `
@@ -518,50 +564,18 @@ async function buildHomePreview() {
   `).join('');
   refreshIcons();
 
-  for (const cat of CATEGORIES) {
+  // Every category loads independently and in parallel — one slow/hanging
+  // API can no longer block the rest of the homepage from appearing.
+  CATEGORIES.forEach((cat) => {
     if (state.kidsSafe && cat.id !== 'anime') {
       document.getElementById(`preview-${cat.id}`).closest('div').style.display = 'none';
-      continue;
+      return;
     }
-    const endpoint = await buildEndpoint(cat.id);
-    const container2 = document.getElementById(`preview-${cat.id}`);
-    const { ok, data } = await fetchAPI(endpoint);
-
-    if (cat.id === 'weather') {
-      const w = ok ? normalizeWeather(data) : null;
-      container2.innerHTML = w
-        ? `<article class="card" style="grid-column:span 2;"><div class="weather-temp">${w.temp}°C</div><div class="card-sub">${w.city} · ${w.condition}</div></article>`
-        : emptyStateHTML('Weather unavailable right now.');
-      refreshIcons();
-      continue;
-    }
-    if (cat.id === 'sports') {
-      const matches = ok && Array.isArray(data) ? data.map(normalizeMatch) : null;
-      if (!matches || !matches.length) { container2.innerHTML = emptyStateHTML('No live matches right now.'); continue; }
-      container2.innerHTML = cardTemplate(cat, matches.slice(0, 3));
-      refreshIcons();
-      continue;
-    }
-    if (cat.id === 'finance') {
-      const coins = ok && Array.isArray(data) ? data.map(normalizeCoin) : null;
-      if (!coins) { container2.innerHTML = emptyStateHTML('Crypto prices unavailable.'); continue; }
-      container2.innerHTML = cardTemplate(cat, coins.slice(0, 4));
-      refreshIcons();
-      continue;
-    }
-
-    const normalizer = NORMALIZERS[cat.id];
-    let items = null;
-    const arr = extractArray(cat.id, data);
-    if (ok && arr) items = arr.map(normalizer);
-    if (items === null) items = SAMPLE[cat.id] || [];
-    state.categoryItems[cat.id] = items;
-
-    if (!items.length) { container2.innerHTML = emptyStateHTML('No results right now.'); continue; }
-    container2.innerHTML = cardTemplate(cat, items.slice(0, 4));
-    refreshIcons();
-    wireGenericCardButtons(container2, cat, items.slice(0, 4));
-  }
+    loadCategoryPreview(cat).catch(() => {
+      const el = document.getElementById(`preview-${cat.id}`);
+      if (el) el.innerHTML = emptyStateHTML('Could not load this section right now.');
+    });
+  });
 }
 
 /* ---------- 12. CATEGORY PAGE (full page per category) ---------- */
@@ -1034,9 +1048,15 @@ async function renderNewsPage() {
     const country = document.getElementById('news-country-select').value;
     document.getElementById('category-page-grid').innerHTML = loadingHTML();
     const { ok, data } = await fetchAPI(`/news?category=${category}${country ? '&country=' + country : ''}`);
-    const items = ok && Array.isArray(data) ? data.map(NORMALIZERS.news) : [];
+    const arr = extractArray('news', data);
+    const items = ok && arr ? arr.map(NORMALIZERS.news) : [];
     state.categoryItems.news = items;
-    if (!items.length) { document.getElementById('category-page-grid').innerHTML = emptyStateHTML('No news found for this filter combination — try "All countries".'); return; }
+    if (!items.length) { document.getElementById('category-page-grid').innerHTML = emptyStateHTML('No news found even after broadening the search — try a different country or category.'); return; }
+    if (country && data?.scope === 'category-only') {
+      showToast(`No ${category} news found for that country — showing global ${category} news instead.`, 'info');
+    } else if (country && data?.scope === 'country-only') {
+      showToast(`No "${category}" news for that country — showing all categories instead.`, 'info');
+    }
     renderFullGrid(cat, items);
   }
   extra.querySelectorAll('#news-chips .filter-chip').forEach((chip) => {
@@ -1051,7 +1071,8 @@ async function renderNewsPage() {
   let items = state.categoryItems.news;
   if (!items) {
     const { ok, data } = await fetchAPI('/news?category=general');
-    items = ok && Array.isArray(data) ? data.map(NORMALIZERS.news) : (SAMPLE.news || []);
+    const arr = extractArray('news', data);
+    items = ok && arr ? arr.map(NORMALIZERS.news) : (SAMPLE.news || []);
     state.categoryItems.news = items;
   }
   renderFullGrid(cat, items);
@@ -1124,17 +1145,22 @@ async function renderSportsPage() {
     <div class="toolbar-search"><svg class="icon icon-sm" data-lucide="search"></svg><input type="text" id="player-search-input" placeholder="Search players…" /></div>
     <div id="player-search-results"></div>
 
-    <h4 style="font-size:0.9rem; margin-bottom:10px;">Live right now</h4>
-    <div class="grid" id="live-matches-grid" style="margin-bottom:24px;">${loadingHTML()}</div>
-    <h4 style="font-size:0.9rem; margin-bottom:10px;">League standings</h4>
+    <h4 style="font-size:0.9rem; margin-bottom:10px;">Filter by country / league</h4>
     <div class="league-select-row">
       <select class="select-input" id="country-select" style="max-width:180px;">
         <option value="">🌍 Popular leagues</option>
         ${COUNTRIES.map((c) => `<option value="${c.name}">${c.name}</option>`).join('')}
       </select>
-      <select class="select-input" id="league-select" style="max-width:220px;">${LEAGUES.map((l) => `<option value="${l.id}">${l.name}</option>`).join('')}</select>
+      <select class="select-input" id="league-select" style="max-width:220px;">
+        <option value="">All live matches</option>
+        ${LEAGUES.map((l) => `<option value="${l.id}">${l.name}</option>`).join('')}
+      </select>
     </div>
-    <div id="standings-container"><div class="card-sub">Select a league to see standings.</div></div>
+
+    <h4 style="font-size:0.9rem; margin:18px 0 10px;">Live right now</h4>
+    <div class="grid" id="live-matches-grid" style="margin-bottom:24px;">${loadingHTML()}</div>
+    <h4 style="font-size:0.9rem; margin-bottom:10px;">League standings</h4>
+    <div id="standings-container"><div class="card-sub">Select a league above to see standings.</div></div>
   `;
   document.getElementById('category-page-grid').innerHTML = '';
   refreshIcons();
@@ -1173,11 +1199,12 @@ async function renderSportsPage() {
     }, 500);
   });
 
-  const { ok, data } = await fetchAPI('/sports/live');
-  const matches = ok && Array.isArray(data) ? data.map(normalizeMatch) : null;
-  const liveGrid = document.getElementById('live-matches-grid');
-  if (!matches || !matches.length) liveGrid.innerHTML = emptyStateHTML('No live matches at the moment.');
-  else {
+  async function loadLiveMatches(leagueId) {
+    const liveGrid = document.getElementById('live-matches-grid');
+    liveGrid.innerHTML = loadingHTML();
+    const { ok, data } = await fetchAPI(`/sports/live${leagueId ? '?league=' + leagueId : ''}`);
+    const matches = ok && Array.isArray(data) ? data.map(normalizeMatch) : null;
+    if (!matches || !matches.length) { liveGrid.innerHTML = emptyStateHTML(leagueId ? 'No live matches in this league right now.' : 'No live matches at the moment.'); return; }
     liveGrid.innerHTML = cardTemplate(cat, matches);
     refreshIcons();
     liveGrid.querySelectorAll('.live-stats-btn').forEach((btn, i) => {
@@ -1190,6 +1217,7 @@ async function renderSportsPage() {
 
   async function loadStandings(leagueId) {
     const container = document.getElementById('standings-container');
+    if (!leagueId) { container.innerHTML = '<div class="card-sub">Select a league above to see standings.</div>'; return; }
     container.innerHTML = loadingHTML('Loading standings…');
     const { ok, data } = await fetchAPI(`/sports/standings?league=${leagueId}&season=${new Date().getFullYear()}`);
     const table = ok && data?.response?.[0]?.league?.standings?.[0];
@@ -1211,13 +1239,19 @@ async function renderSportsPage() {
       </table>
     `;
   }
-  document.getElementById('league-select').addEventListener('change', (e) => loadStandings(e.target.value));
+
+  // Selecting a league filters BOTH the live matches grid and the standings table.
+  document.getElementById('league-select').addEventListener('change', (e) => {
+    loadLiveMatches(e.target.value);
+    loadStandings(e.target.value);
+  });
+
   document.getElementById('country-select').addEventListener('change', async (e) => {
     const leagueSelect = document.getElementById('league-select');
     const country = e.target.value;
     if (!country) {
-      leagueSelect.innerHTML = LEAGUES.map((l) => `<option value="${l.id}">${l.name}</option>`).join('');
-      loadStandings(LEAGUES[0].id);
+      leagueSelect.innerHTML = `<option value="">All live matches</option>${LEAGUES.map((l) => `<option value="${l.id}">${l.name}</option>`).join('')}`;
+      loadLiveMatches(''); loadStandings('');
       return;
     }
     leagueSelect.innerHTML = `<option>Loading…</option>`;
@@ -1231,12 +1265,16 @@ async function renderSportsPage() {
     if (!leagues.length) {
       leagueSelect.innerHTML = `<option value="">No leagues found</option>`;
       document.getElementById('standings-container').innerHTML = emptyStateHTML(`API-Football has no league data for ${country} on the current plan.`);
+      loadLiveMatches('');
       return;
     }
     leagueSelect.innerHTML = leagues.map((l) => `<option value="${l.id}">${l.name}${l.type === 'Cup' ? ' (Cup)' : ''}</option>`).join('');
+    loadLiveMatches(leagues[0].id);
     loadStandings(leagues[0].id);
   });
-  loadStandings(LEAGUES[0].id);
+
+  loadLiveMatches('');
+  loadStandings('');
 }
 
 /* ---- Finance page: full list + currency converter ---- */
